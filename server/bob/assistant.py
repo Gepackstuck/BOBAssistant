@@ -7,6 +7,7 @@ from .capabilities import HELP_RE, help_text
 from .llm import make_llm
 from .memory import Memory
 from .music import Music, current_device
+from .planner import Planner
 from .settings import VOLUME_MAX, VOLUME_MIN, VOLUME_STEP, DeviceSettings
 from .tools import build_registry
 from .tools.clock import describe, now
@@ -19,6 +20,7 @@ SYSTEM = """Ты {name}, домашний голосовой ассистент.
 - На вопрос о погоде сначала обязательно вызови инструмент weather, о времени и дате — current_time, на любой расчёт — calculator. Называть такие данные без вызова инструмента запрещено: ты их не знаешь.
 - За свежими фактами (новости, курсы, счёт матча, цены) обращайся к web_search и пересказывай коротко, без ссылок. У новостей в начале стоит дата: сверяй её с сегодняшней. Если за нужный день данных нет, так и скажи («свежих данных не нашёл», можно назвать, на какую дату есть).
 - На любой вопрос о фактах про человека, группу, место, фильм, песню или понятие («кто такой», «сколько лет», «когда родился», «что такое») сначала вызови encyclopedia и отвечай по её тексту, а не по памяти. На «кто такой» отвечай, кем человек является и чем известен, без возраста и дат. Возраст называй только если о нём спросили, бери число из пометки «Полных лет на сегодня», сам не считай. В ответе называй, о ком речь («Лолита Милявская, ей шестьдесят три года»). Фразу «не нашёл» можно говорить только после вызова инструмента.
+- Таймеры, напоминания, будильники и список покупок ставь только инструментами set_timer, set_reminder, set_alarm, shopping_list (время переводи в секунды, минуты или ЧЧ:ММ сам), потом коротко подтверди. На «доброе утро» и «что на сегодня» вызови morning_brief и перескажи его.
 - Когда просят запомнить или рассказывают о себе важное, вызови remember. Когда просят забыть — forget.
 - Если подходящего инструмента нет или он не ответил, честно скажи, что не знаешь. Ничего не выдумывай.
 - Если инструмент вернул ошибку или ничего не нашёл (особенно в музыке), не рассказывай, кто или что это, и не угадывай: скажи, что не расслышал, и попроси повторить название.
@@ -61,6 +63,8 @@ CLOSING_FILLER = {
 }
 DETAIL_MARK = "|||"
 MORE_RE = re.compile(r"^\s*(?:расскажи\s+)?(?:по)?подробнее|развёрнуто|более\s+подробно", re.IGNORECASE)
+PLAN_RE = re.compile(r"таймер|напомни|напоминани|будильн|разбуди|список покупок|списке покупок|в список|из списка|убери|осталось", re.IGNORECASE)
+MORNING_RE = re.compile(r"доброе\s+утро|что\s+(?:у\s+меня\s+)?на\s+сегодня|утренн\w+\s+сводк|сводк\w+\s+на\s+(?:сегодня|день)", re.IGNORECASE)
 SHORTER_RE = re.compile(r"^\s*(?:скажи\s+)?короче|кратко|одним\s+предложением", re.IGNORECASE)
 WORD_RE = re.compile(r"[а-яёa-z]+", re.IGNORECASE)
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+")
@@ -72,7 +76,8 @@ class Assistant:
         self.settings = settings
         self.memory = Memory()
         self.music = Music(cfg)
-        self.registry = build_registry(cfg, self.memory, self.music)
+        self.planner = Planner(cfg)
+        self.registry = build_registry(cfg, self.memory, self.music, self.planner)
         self.llm = make_llm(cfg["llm"])
         self.session_seconds = cfg["llm"]["session_minutes"] * 60
         self.session: list = self.llm.new_session()
@@ -161,9 +166,9 @@ class Assistant:
         spoken, _, extra = answer.partition(DETAIL_MARK)
         spoken = self.tidy(spoken) or "Не получилось ответить."
         extra = extra.replace(DETAIL_MARK, " ").strip()
-        if MORE_RE.search(text):
+        if MORE_RE.search(text) or MORNING_RE.search(text):
             spoken, extra = f"{spoken} {extra}".strip(), ""
-        elif SHORTER_RE.search(text):
+        elif SHORTER_RE.search(text) or PLAN_RE.search(text):
             extra = ""
         return f"{spoken}{DETAIL_MARK}{extra}" if extra else spoken
 

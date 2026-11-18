@@ -160,6 +160,8 @@ def run_voice(cfg: dict, use_mic: bool) -> None:
     displays = Displays()
     server = DeviceServer(cfg, brain, displays)
     server.start()
+    assistant.planner.on_fire = server.fire
+    assistant.planner.start()
     print(f"Готово за {time.perf_counter() - started:.1f} с. Скажите «Боб», «Миньон», «Подручный» или «Окей, Сбер».")
     if not use_mic:
         threading.Event().wait()

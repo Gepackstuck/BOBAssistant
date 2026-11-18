@@ -8,7 +8,7 @@ from websockets.sync.server import serve
 
 from .config import ROOT
 from .devices import Device, Displays, RemoteDevice, plate_payload
-from .pipeline import Brain, Listener
+from .pipeline import Brain, Listener, scaled
 
 TOKEN_FILE = ROOT / "secrets" / "token"
 DEMO_REQUEST = "какая погода завтра в Москве"
@@ -48,6 +48,28 @@ class DeviceServer(threading.Thread):
         return lambda phase, request="", answer="", voice=True, theme="dark", window=0: self.displays.publish(
             name, plate_payload(phase, request, answer, voice, theme, window)
         )
+
+    def fire(self, entry) -> None:
+        name = entry.device if self.devices.get(entry.device) and self.devices[entry.device].alive else "mac"
+        device = self.devices.get(name)
+        if device is None:
+            return
+        text = {
+            "timer": f"Таймер {entry.text} завершён.",
+            "reminder": f"Напоминаю: {entry.text}.",
+        }.get(entry.kind, f"Будильник. {entry.text or 'Пора вставать.'}")
+        settings = self.brain.settings
+        voice = settings.voice(name)
+        device.plate("answer", "", text, voice, settings.theme(name))
+        if voice:
+            tts = self.brain.tts
+            for _ in range(3 if entry.kind == "alarm" else 2):
+                device.chime()
+                device.play(scaled(tts.stream(text, tts.voices[tts.default_voice]), settings.volume(name)), tts.sample_rate)
+                time.sleep(4)
+        else:
+            time.sleep(20)
+        device.plate("idle")
 
     def announce(self, name: str, text: str, voice: str | None) -> str:
         device = self.devices.get(name)
