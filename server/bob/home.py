@@ -165,8 +165,16 @@ class Home:
 
     def overview(self) -> str:
         lights = [entity for entity in self.entities() if entity["entity_id"].startswith("light.")]
-        on = [entity.get("attributes", {}).get("friendly_name", entity["entity_id"]) for entity in lights if entity["state"] == "on"]
-        return f"Свет включён: {', '.join(on)}." if on else "Весь свет выключен."
+        name = lambda entity: entity.get("attributes", {}).get("friendly_name", entity["entity_id"])
+        on = [name(entity) for entity in lights if entity["state"] == "on"]
+        off = [name(entity) for entity in lights if entity["state"] == "off"]
+        gone = [name(entity) for entity in lights if entity["state"] == "unavailable"]
+        parts = [f"Включено: {' и '.join(on)}." if on else "Весь свет выключен."]
+        if off and on:
+            parts.append(f"Выключено: {' и '.join(off)}.")
+        if gone:
+            parts.append(f"Не отвечает: {' и '.join(gone)}.")
+        return " ".join(parts)
 
 
 def specs(home: Home) -> list[dict]:
@@ -195,7 +203,7 @@ def specs(home: Home) -> list[dict]:
         },
         {
             "name": "home_status",
-            "description": "Узнать состояние устройства или показание датчика: температура, влажность, включён ли свет, закрыта ли дверь. Без названия: какой свет включён.",
+            "description": "ОБЯЗАТЕЛЬНО вызывай на любой вопрос о состоянии дома: какой свет включён, включена ли лампа, какая температура или влажность, закрыта ли дверь. Без названия: перечисляет включённый свет.",
             "parameters": {"type": "object", "properties": {"name": {"type": "string", "description": "Название устройства или датчика"}}, "additionalProperties": False},
             "run": lambda args: home.status(args["name"]) if args.get("name") else home.overview(),
         },
