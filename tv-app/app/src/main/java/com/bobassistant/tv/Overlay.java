@@ -1,6 +1,5 @@
 package com.bobassistant.tv;
 
-import android.animation.LayoutTransition;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Color;
@@ -18,6 +17,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.animation.DecelerateInterpolator;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -25,6 +25,7 @@ final class Overlay {
     private final Context context;
     private final WindowManager windows;
     private final Handler main = new Handler(Looper.getMainLooper());
+    private FrameLayout root;
     private LinearLayout pill;
     private View dot;
     private GradientDrawable dotShape;
@@ -78,7 +79,6 @@ final class Overlay {
         glass.setStroke((int) dp(1.5f), Color.argb(90, 255, 255, 255));
         pill.setBackground(glass);
         pill.setElevation(dp(12));
-        pill.setLayoutTransition(new LayoutTransition());
 
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -116,6 +116,10 @@ final class Overlay {
         hintParams.topMargin = (int) dp(8);
         pill.addView(hint, hintParams);
         pill.setAlpha(0f);
+        root = new FrameLayout(context);
+        root.addView(pill, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
     }
 
     private void attach() {
@@ -126,7 +130,7 @@ final class Overlay {
             build();
         }
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -136,7 +140,7 @@ final class Overlay {
         params.alpha = 0.8f;
         params.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
         params.y = (int) dp(48);
-        windows.addView(pill, params);
+        windows.addView(root, params);
         attached = true;
     }
 
@@ -146,7 +150,7 @@ final class Overlay {
             fill.cancel();
         }
         if (attached) {
-            windows.removeViewImmediate(pill);
+            windows.removeViewImmediate(root);
             attached = false;
         }
         shownRequest = "";

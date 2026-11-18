@@ -46,6 +46,15 @@
             android:foregroundServiceType="microphone|mediaPlayback" />
 
         <receiver
+            android:name=".ControlReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.bobassistant.tv.STOP" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".BootReceiver"
             android:exported="true">
             <intent-filter>
