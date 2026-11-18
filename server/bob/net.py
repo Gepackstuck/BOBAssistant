@@ -134,6 +134,9 @@ class DeviceServer(threading.Thread):
             self.control(connection)
             return
         name = str(hello.get("device") or "tv")[:32]
+        if not self.brain.settings.enabled(name):
+            connection.close(code=4403, reason="device disabled")
+            return
         if role == "display":
             self.display(connection, name)
             return

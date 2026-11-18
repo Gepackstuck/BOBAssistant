@@ -1,4 +1,5 @@
 import queue
+import time
 from collections import deque
 from typing import Iterable
 
@@ -6,6 +7,7 @@ import numpy as np
 import sounddevice as sd
 
 BLOCK = 1280
+WATCHDOG_SECONDS = 3.0
 
 
 class Mic:
@@ -14,18 +16,30 @@ class Mic:
         self.frames: queue.Queue[np.ndarray] = queue.Queue()
         self.preroll: deque[np.ndarray] = deque(maxlen=max(1, int(preroll_seconds * sample_rate / BLOCK)))
         self.muted = False
-        self.stream = sd.InputStream(
-            samplerate=sample_rate,
+        self.device = device
+        self.last_callback = time.monotonic()
+        self.peak = 0
+        self.rms = 0.0
+        self.restarts = 0
+        self.stream = self._open()
+
+    def _open(self) -> sd.InputStream:
+        return sd.InputStream(
+            samplerate=self.sample_rate,
             channels=1,
             dtype="int16",
             blocksize=BLOCK,
-            device=device,
+            device=self.device,
             callback=self._callback,
         )
 
-    def _callback(self, data, frames, time, status) -> None:
+    def _callback(self, data, frames, moment, status) -> None:
+        self.last_callback = time.monotonic()
+        samples = data[:, 0]
+        self.peak = max(int(np.abs(samples).max()), int(self.peak * 0.97))
+        self.rms = 0.95 * self.rms + 0.05 * float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
         if not self.muted:
-            self.frames.put(data[:, 0].copy())
+            self.frames.put(samples.copy())
 
     def __enter__(self) -> "Mic":
         self.stream.start()
@@ -35,10 +49,33 @@ class Mic:
         self.stream.stop()
         self.stream.close()
 
+    def restart(self) -> None:
+        print("[mac] микрофон замолчал, открываю заново", flush=True)
+        try:
+            self.stream.stop()
+            self.stream.close()
+        except Exception:
+            pass
+        try:
+            sd._terminate()
+            sd._initialize()
+        except Exception:
+            pass
+        self.stream = self._open()
+        self.stream.start()
+        self.restarts += 1
+        self.last_callback = time.monotonic()
+
     def read(self, timeout: float | None = None) -> np.ndarray | None:
         try:
             block = self.frames.get(timeout=timeout)
         except queue.Empty:
+            if time.monotonic() - self.last_callback > WATCHDOG_SECONDS:
+                try:
+                    self.restart()
+                except Exception as error:
+                    print(f"[mac] не удалось открыть микрофон: {error}", flush=True)
+                    self.last_callback = time.monotonic()
             return None
         self.preroll.append(block)
         return block

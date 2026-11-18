@@ -95,6 +95,14 @@ class LocalDevice(Device):
     def music(self, payload: dict) -> None:
         self.player.handle(payload)
 
+    @property
+    def peak(self) -> int:
+        return self.mic.peak
+
+    @property
+    def rms(self) -> float:
+        return self.mic.rms
+
     def chime(self) -> None:
         self.speaker.chime()
 

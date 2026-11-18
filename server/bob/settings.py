@@ -25,6 +25,9 @@ class DeviceSettings:
         for listener in self.listeners:
             listener(device)
 
+    def enabled(self, device: str) -> bool:
+        return self.get(device, "enabled", True)
+
     def voice(self, device: str) -> bool:
         return self.get(device, "voice", True)
 
