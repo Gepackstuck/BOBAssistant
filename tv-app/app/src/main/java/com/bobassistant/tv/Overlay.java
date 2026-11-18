@@ -65,7 +65,7 @@ final class Overlay {
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
         view.setTypeface(strong ? Typeface.create(Typeface.DEFAULT, 600, false) : Typeface.DEFAULT);
         view.setLineSpacing(0, strong ? 1.1f : 1f);
-        view.setMaxWidth((int) dp(840));
+        view.setMaxWidth((int) dp(430));
         view.setEllipsize(TextUtils.TruncateAt.END);
         view.setIncludeFontPadding(false);
         return view;
@@ -74,27 +74,27 @@ final class Overlay {
     private void build() {
         pill = new LinearLayout(context);
         pill.setOrientation(LinearLayout.VERTICAL);
-        pill.setPadding((int) dp(30), (int) dp(22), (int) dp(30), (int) dp(22));
+        pill.setPadding((int) dp(26), (int) dp(18), (int) dp(26), (int) dp(18));
         pill.setElevation(dp(18));
 
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         indicator = new IndicatorView(context);
-        int size = (int) dp(62);
+        int size = (int) dp(54);
         LinearLayout.LayoutParams indicatorParams = new LinearLayout.LayoutParams(size, size);
-        indicatorParams.setMargins((int) dp(-12), (int) dp(-12), (int) dp(2), (int) dp(-12));
+        indicatorParams.setMargins((int) dp(-10), (int) dp(-10), (int) dp(2), (int) dp(-10));
         row.addView(indicator, indicatorParams);
 
         LinearLayout column = new LinearLayout(context);
         column.setOrientation(LinearLayout.VERTICAL);
-        small = text(18, false);
+        small = text(15, false);
         small.setMaxLines(1);
-        big = text(28, true);
+        big = text(24, true);
         big.setMaxLines(5);
         LinearLayout.LayoutParams bigParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        bigParams.topMargin = (int) dp(6);
+        bigParams.topMargin = (int) dp(4);
         column.addView(small);
         column.addView(big, bigParams);
         row.addView(column);
@@ -109,7 +109,7 @@ final class Overlay {
         timer.addView(timerTrack, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         timer.addView(timerFill, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         LinearLayout.LayoutParams timerParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (int) dp(4));
-        timerParams.topMargin = (int) dp(16);
+        timerParams.topMargin = (int) dp(14);
         timer.setVisibility(View.GONE);
         pill.addView(timer, timerParams);
 
@@ -157,7 +157,7 @@ final class Overlay {
 
     private void applyTheme(boolean light) {
         GradientDrawable card = new GradientDrawable();
-        card.setCornerRadius(dp(36));
+        card.setCornerRadius(dp(32));
         card.setColor(light ? Color.argb(230, 255, 255, 255) : Color.argb(235, 18, 19, 24));
         card.setStroke((int) dp(1), light ? Color.argb(15, 0, 0, 0) : Color.argb(20, 255, 255, 255));
         pill.setBackground(card);

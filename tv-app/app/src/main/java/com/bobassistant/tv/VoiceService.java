@@ -39,6 +39,7 @@ public final class VoiceService extends Service implements Link.Callback {
     private final Player player = new Player();
     private Thread recorder;
     private volatile boolean recording;
+    private volatile AudioRecord active;
 
     static void start(Context context) {
         context.startForegroundService(new Intent(context, VoiceService.class));
@@ -82,8 +83,20 @@ public final class VoiceService extends Service implements Link.Callback {
     public void onDestroy() {
         running = false;
         recording = false;
+        AudioRecord current = active;
+        if (current != null) {
+            try {
+                current.stop();
+            } catch (IllegalStateException ignored) {
+            }
+        }
         if (recorder != null) {
             recorder.interrupt();
+            try {
+                recorder.join(2500);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
         }
         if (link != null) {
             link.stop();
@@ -111,6 +124,17 @@ public final class VoiceService extends Service implements Link.Callback {
     }
 
     private void startRecorder() {
+        if (recorder != null && recorder.isAlive()) {
+            try {
+                recorder.join(3000);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+            if (recorder.isAlive()) {
+                Log.e(TAG, "previous microphone thread is still alive, not starting a second recorder");
+                return;
+            }
+        }
         recording = true;
         recorder = new Thread(this::record, "bob-mic");
         recorder.start();
@@ -186,6 +210,7 @@ public final class VoiceService extends Service implements Link.Callback {
         if (record == null) {
             return;
         }
+        active = record;
         micSetup = "источник " + Prefs.source(this) + ", каналов " + channels;
         AcousticEchoCanceler canceller = null;
         if (AcousticEchoCanceler.isAvailable()) {
@@ -205,7 +230,9 @@ public final class VoiceService extends Service implements Link.Callback {
             while (recording) {
                 int read = record.read(frames, 0, frames.length, AudioRecord.READ_BLOCKING);
                 if (read < 0) {
-                    Log.e(TAG, "read failed " + read);
+                    if (recording) {
+                        Log.e(TAG, "read failed " + read);
+                    }
                     break;
                 }
                 int samples = read / channels;
@@ -220,7 +247,11 @@ public final class VoiceService extends Service implements Link.Callback {
                 }
             }
         } finally {
-            record.stop();
+            active = null;
+            try {
+                record.stop();
+            } catch (IllegalStateException ignored) {
+            }
             record.release();
             if (canceller != null) {
                 canceller.release();

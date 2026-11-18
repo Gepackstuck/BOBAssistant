@@ -60,7 +60,7 @@ final class IndicatorView extends View {
     protected void onDraw(Canvas canvas) {
         float cx = getWidth() / 2f;
         float cy = getHeight() / 2f;
-        float size = Math.min(getWidth(), getHeight()) / 1.65f;
+        float size = Math.min(getWidth(), getHeight()) / 1.8f;
         float t = (SystemClock.uptimeMillis() % 600000L) / 1000f;
         if (mode == BARS) {
             drawBars(canvas, cx, cy, size, t);
@@ -74,9 +74,11 @@ final class IndicatorView extends View {
             angle = -360f * ((t / 1.4f) % 1f);
         }
         float radius = size / 2f * scale;
-        glow.setShader(new RadialGradient(cx, cy, size * 0.95f * scale,
-                Color.argb(130, 181, 124, 255), Color.argb(0, 181, 124, 255), Shader.TileMode.CLAMP));
-        canvas.drawCircle(cx, cy, size * 0.95f * scale, glow);
+        float reach = Math.min(getWidth(), getHeight()) / 2f;
+        glow.setShader(new RadialGradient(cx, cy, reach,
+                new int[]{Color.argb((int) (150 * scale / 1.14f), 181, 124, 255), Color.argb(70, 181, 124, 255), Color.argb(0, 181, 124, 255)},
+                new float[]{0.45f, 0.7f, 1f}, Shader.TileMode.CLAMP));
+        canvas.drawCircle(cx, cy, reach, glow);
         canvas.save();
         canvas.rotate(angle - 90f, cx, cy);
         SweepGradient sweep = new SweepGradient(cx, cy, ACCENT, new float[]{0f, 0.25f, 0.5f, 0.75f, 1f});
