@@ -1,5 +1,12 @@
+import re
+
 import mlx_whisper
 import numpy as np
+
+HALLUCINATION_RE = re.compile(
+    r"субтитр|DimaTorzok|продолжение следует|спасибо за просмотр|подписывайтесь на канал|редактор субтитров|корректор",
+    re.IGNORECASE,
+)
 
 
 class Whisper:
@@ -20,4 +27,5 @@ class Whisper:
             condition_on_previous_text=False,
             no_speech_threshold=0.6,
         )
-        return result.get("text", "").strip()
+        text = result.get("text", "").strip()
+        return "" if HALLUCINATION_RE.search(text) else text

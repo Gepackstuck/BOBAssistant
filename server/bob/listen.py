@@ -22,7 +22,7 @@ class Vad:
         self.model.reset_states()
 
 
-def capture(mic: Mic, vad: Vad, cfg: dict, preroll: list[np.ndarray]) -> np.ndarray:
+def capture(mic: Mic, vad: Vad, cfg: dict, preroll: list[np.ndarray]) -> tuple[np.ndarray, bool]:
     rate = mic.sample_rate
     block_ms = 1000 * len(preroll[0]) / rate if preroll else 80
     silence_limit = cfg["silence_ms"] / block_ms
@@ -30,6 +30,9 @@ def capture(mic: Mic, vad: Vad, cfg: dict, preroll: list[np.ndarray]) -> np.ndar
     max_blocks = cfg["max_seconds"] * 1000 / block_ms
     vad.reset()
     blocks = list(preroll)
+    heard = any(vad.speech_ratio(block, rate) > 0.3 for block in preroll)
+    vad.reset()
+    heard_before = heard
     heard = False
     quiet = 0
     waited = 0
@@ -48,4 +51,5 @@ def capture(mic: Mic, vad: Vad, cfg: dict, preroll: list[np.ndarray]) -> np.ndar
             waited += 1
             if waited >= start_limit:
                 break
-    return np.concatenate(blocks) if blocks else np.zeros(0, dtype=np.int16)
+    audio = np.concatenate(blocks) if blocks else np.zeros(0, dtype=np.int16)
+    return audio, heard or heard_before

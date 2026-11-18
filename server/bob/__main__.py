@@ -83,9 +83,9 @@ def run_voice(cfg: dict) -> None:
             if not phrase:
                 continue
             print(f"🎙 «{phrase}», слушаю")
-            audio = capture(mic, vad, cfg["listen"], mic.take_preroll())
+            audio, voiced = capture(mic, vad, cfg["listen"], mic.take_preroll())
             watch = Stopwatch()
-            heard = whisper.transcribe(audio)
+            heard = whisper.transcribe(audio) if voiced else ""
             watch.lap("речь→текст")
             print(f"   whisper: «{heard}» ({len(audio) / mic.sample_rate:.1f} с)")
             verified, command = strip_wake(heard)
@@ -95,9 +95,9 @@ def run_voice(cfg: dict) -> None:
                 continue
             if not command:
                 speaker.chime()
-                audio = capture(mic, vad, cfg["listen"], [])
+                audio, voiced = capture(mic, vad, cfg["listen"], [])
                 watch = Stopwatch()
-                heard = whisper.transcribe(audio)
+                heard = whisper.transcribe(audio) if voiced else ""
                 watch.lap("речь→текст")
                 print(f"   whisper после сигнала: «{heard}» ({len(audio) / mic.sample_rate:.1f} с)")
                 command = strip_wake(heard)[1]
