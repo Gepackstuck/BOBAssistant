@@ -157,6 +157,10 @@ def run_voice(cfg: dict, use_mic: bool) -> None:
     if names:
         whisper.prompt = f"{whisper.prompt} Исполнители: {', '.join(names)}."
     brain = Brain(cfg, assistant, whisper, load_voice(cfg), settings)
+    if cfg["stt"].get("phonetic", True):
+        from .phonetic import Phonetic
+        brain.phonetic = Phonetic()
+        brain.phonetic.start()
     displays = Displays()
     server = DeviceServer(cfg, brain, displays)
     server.start()

@@ -1,5 +1,6 @@
 import itertools
 import json
+import re
 import threading
 import time
 import wave
@@ -9,9 +10,11 @@ from .config import ROOT
 from .assistant import DETAIL_MARK
 from .devices import Device
 from .listen import Vad, capture, looks_unfinished
+from .music import phonetic_hint
 from .wake import make_wake, remove_wake, strip_wake
 
 PLATE_INTERVAL = 0.12
+PLAY_RE = re.compile(r"^\s*(?:боб[\s,.!]+)?(?:включи|поставь|сыграй|запусти|найди|давай)\b", re.IGNORECASE)
 UTTERANCES = ROOT / "data" / "utterances"
 
 
@@ -51,6 +54,7 @@ class Brain:
         self.claim_lock = threading.Lock()
         self.claimed_by: str | None = None
         self.claimed_at = 0.0
+        self.phonetic = None
 
     def transcribe(self, audio):
         with self.stt_lock:
@@ -78,11 +82,13 @@ class Listener(threading.Thread):
         self.verify = cfg["wake"].get("verify_with_stt", True)
         self.held = False
         self.visible = False
+        self.heard_audio = None
 
     def log(self, message: str) -> None:
         print(f"[{self.device.name}] {message}", flush=True)
 
     def transcribe(self, audio) -> str:
+        self.heard_audio = audio
         text = self.brain.transcribe(audio)
         keep = self.brain.cfg["debug"].get("keep_utterances", 0)
         if keep and self.device.name == "mac" and audio.size:
@@ -212,8 +218,15 @@ class Listener(threading.Thread):
         while command:
             self.log(f"Вы: {command}")
             self.show("thinking", command)
-            with brain.turn_lock:
-                answer = brain.assistant.handle(command, device.name)
+            hint = brain.phonetic.transcribe(self.heard_audio) if brain.phonetic and PLAY_RE.search(command) and self.heard_audio is not None else ""
+            if hint:
+                self.log(f"по звучанию: «{hint}»")
+            token = phonetic_hint.set(hint)
+            try:
+                with brain.turn_lock:
+                    answer = brain.assistant.handle(command, device.name)
+            finally:
+                phonetic_hint.reset(token)
             watch.lap("модель")
             spoken, _, extra = answer.partition(DETAIL_MARK)
             spoken = spoken.strip()

@@ -16,6 +16,10 @@ WAVE = "user:onyourwave"
 VOLUME_STEP = 0.15
 MAX_BITRATE = 192
 MATCH_SHARE = 0.6
+PHONETIC_SCORE = 0.62
+PHONETIC_MARGIN = 0.08
+PHONETIC_TITLE = 0.5
+COMMAND_WORDS = {"включи", "поставь", "сыграй", "запусти", "найди", "боб", "миньон", "подручный", "сбер", "пожалуйста", "песню", "трек", "альбом", "мне", "давай", "окей", "ок", "музыку", "от", "группы", "исполнителя"}
 STATION_TYPES = ("mood", "activity", "epoch", "genre", "personal", "editorial")
 STATION_HINTS = [
     (r"весел|радост|позитив", "mood:happy"), (r"бодр|энергич", "mood:energetic"), (r"расслаб|отдых", "mood:relaxed"),
@@ -31,6 +35,7 @@ NOT_FOUND = "по запросу «{}» нет подходящего испол
 KINDS = ("auto", "track", "artist", "album", "playlist", "wave", "station")
 
 current_device = contextvars.ContextVar("current_device", default="mac")
+phonetic_hint = contextvars.ContextVar("phonetic_hint", default="")
 
 TASTE_PATH = ROOT / "data" / "taste.json"
 TASTE_TTL = 24 * 3600
@@ -136,6 +141,7 @@ class Music:
         self.sessions: dict[str, Session] = {}
         self.devices: dict = {}
         self.stations: list | None = None
+        self.extra_names: list[str] = list(cfg.get("stt", {}).get("names", []))
 
     def bind(self, devices: dict) -> None:
         self.devices = devices
@@ -208,6 +214,62 @@ class Music:
     def cover_url(self, item: Item, size: str = "200x200") -> str:
         uri = getattr(item.track, "cover_uri", None)
         return f"https://{uri.replace('%%', size)}" if uri else ""
+
+    def known_names(self) -> list[str]:
+        return list(dict.fromkeys([*self.extra_names, *self.taste_names(limit=300)]))
+
+    def phonetic_artist(self, hint: str) -> tuple[str, list[str]] | None:
+        heard = words(hint)
+        names = [(name, " ".join(words(name))) for name in self.known_names()]
+        scored = []
+        for size in range(1, 5):
+            for start in range(len(heard) - size + 1):
+                gram = " ".join(heard[start:start + size])
+                if len(gram.replace(" ", "")) < 4 or all(word in COMMAND_WORDS for word in heard[start:start + size]):
+                    continue
+                for name, spoken in names:
+                    if abs(len(spoken.split()) - size) <= 1 and len(spoken.replace(" ", "")) >= 4:
+                        scored.append((difflib.SequenceMatcher(None, gram, spoken).ratio(), name, start, size))
+        scored.sort(reverse=True)
+        if not scored or scored[0][0] < PHONETIC_SCORE:
+            return None
+        best = scored[0]
+        rival = next((item for item in scored if item[1] != best[1] and item[2] < best[2] + best[3] and best[2] < item[2] + item[3]), None)
+        if rival and best[0] - rival[0] < PHONETIC_MARGIN:
+            return None
+        rest = [word for index, word in enumerate(heard) if not best[2] <= index < best[2] + best[3] and word not in COMMAND_WORDS]
+        return best[1], rest
+
+    def phonetic_track_score(self, rest: list[str], track) -> float:
+        wanted = " ".join(rest)
+        title = words(track.title or "")
+        have = [*title, *(word for artist in (track.artists or []) for word in words(artist.name))]
+        soft = sum(1 for word in rest if any(difflib.SequenceMatcher(None, word, other).ratio() >= 0.6 for other in have)) / len(rest)
+        return max(difflib.SequenceMatcher(None, wanted, " ".join(title)).ratio(), soft)
+
+    def phonetic_resolve(self) -> "Resolved | None":
+        hint = phonetic_hint.get()
+        found = self.phonetic_artist(hint) if hint else None
+        if found is None:
+            return None
+        name, rest = found
+        client = self.api()
+        result = client.search(name, type_="artist")
+        artists = result.artists.results if result and result.artists else []
+        artist = next((candidate for candidate in artists[:5] if same_artist(candidate.name, name) or " ".join(words(candidate.name)) == " ".join(words(name))), artists[0] if artists else None)
+        if artist is None:
+            return None
+        if rest:
+            tracks = []
+            for page in range(3):
+                batch = client.artists_tracks(artist.id, page=page, page_size=50)
+                tracks.extend(batch.tracks if batch and batch.tracks else [])
+            scored = [(self.phonetic_track_score(rest, track), track) for track in tracks]
+            if scored:
+                score, track = max(scored, key=lambda pair: pair[0])
+                if score >= PHONETIC_TITLE:
+                    return Resolved([to_item(track)], track.title)
+        return Resolved(self.artist_items(artist), artist.name, self.artist_alternatives(name, artist))
 
     def card_payload(self, device: str) -> dict:
         session = self.sessions.get(device)
@@ -299,11 +361,16 @@ class Music:
         device = device or current_device.get()
         query = " ".join(part for part in (artist, title) if part) or query
         try:
-            resolved = self.resolve(query, kind if kind in KINDS else "auto")
+            try:
+                resolved = self.resolve(query, kind if kind in KINDS else "auto")
+            except RuntimeError:
+                if kind != "station":
+                    raise
+                resolved = self.resolve(query, "auto")
         except RuntimeError:
-            if kind != "station":
+            resolved = self.phonetic_resolve()
+            if resolved is None:
                 raise
-            resolved = self.resolve(query, "auto")
         if not resolved.items:
             raise RuntimeError("ничего не нашёл")
         with self.lock:
