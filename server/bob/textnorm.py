@@ -2,6 +2,8 @@ import re
 
 from num2words import num2words
 
+from .pronounce import latin_to_speech
+
 UNITS = {
     "°": ("градус", "градуса", "градусов"),
     "%": ("процент", "процента", "процентов"),
@@ -52,5 +54,6 @@ def for_speech(text: str) -> str:
     text = MARKUP_RE.sub("", text)
     text = TIME_RE.sub(say_time, text)
     text = NUMBER_UNIT_RE.sub(say_number_unit, text)
+    text = latin_to_speech(text)
     text = NUMBER_RE.sub(lambda m: say_number(m.group(0)), text)
     return re.sub(r"\s+", " ", text).strip()
