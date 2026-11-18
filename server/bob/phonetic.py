@@ -22,6 +22,10 @@ class Phonetic:
         self.lock = threading.Lock()
 
     @property
+    def available(self) -> bool:
+        return self.ready.is_set()
+
+    @property
     def installed(self) -> bool:
         return (HELPER / ".venv" / "bin" / "python").exists()
 

@@ -11,11 +11,12 @@ from .assistant import DETAIL_MARK
 from .devices import Device
 from .listen import Vad, capture, looks_unfinished
 from .music import phonetic_hint
-from .wake import make_wake, remove_wake, strip_wake
+from .wake import GIGA_WAKE_RE, make_wake, remove_wake, strip_wake
 
 PLATE_INTERVAL = 0.12
 PLAY_RE = re.compile(r"^\s*(?:боб[\s,.!]+)?(?:включи|поставь|сыграй|запусти|найди|давай)\b", re.IGNORECASE)
 UTTERANCES = ROOT / "data" / "utterances"
+TRIGGERS = ROOT / "data" / "triggers"
 
 
 class Stopwatch:
@@ -94,6 +95,35 @@ class Listener(threading.Thread):
         if keep and self.device.name == "mac" and audio.size:
             self.save_utterance(audio, text, keep)
         return text
+
+    def phonetic_check(self, audio) -> tuple[bool | None, str]:
+        phonetic = self.brain.phonetic
+        if phonetic is None or not phonetic.available:
+            return None, ""
+        text = phonetic.transcribe(audio)
+        return bool(GIGA_WAKE_RE.search(text)), text
+
+    def barge_monitor(self, block):
+        key = self.wake.feed(block)
+        return key if key and self.wake.strong else None
+
+    def save_trigger(self, audio, key: str, strong: bool, live: bool, giga: str, heard: str, accepted: bool) -> None:
+        keep = self.brain.cfg["debug"].get("keep_triggers", 0)
+        if not keep or audio is None or audio.size == 0:
+            return
+        TRIGGERS.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+        name = f"{self.device.name}-{stamp}.wav"
+        with wave.open(str(TRIGGERS / name), "wb") as file:
+            file.setnchannels(1)
+            file.setsampwidth(2)
+            file.setframerate(self.device.sample_rate)
+            file.writeframes(audio.astype("int16").tobytes())
+        entry = {"file": name, "device": self.device.name, "key": key, "strong": strong, "live": live, "giga": giga, "whisper": heard, "accepted": accepted}
+        with (TRIGGERS / "index.jsonl").open("a", encoding="utf-8") as index:
+            index.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        for old in sorted(TRIGGERS.glob("*.wav"))[:-keep]:
+            old.unlink()
 
     def save_utterance(self, audio, text: str, keep: int) -> None:
         UTTERANCES.mkdir(parents=True, exist_ok=True)
@@ -177,9 +207,19 @@ class Listener(threading.Thread):
             self.log(f"«{key}» услышало другое устройство")
             self.device.drain()
             return None
-        self.log(f"🎙 «{key}», слушаю")
-        self.show("listening")
+        strong = self.wake.strong
+        self.log(f"🎙 «{key}», слушаю" + ("" if strong else " (слабое срабатывание)"))
+        if strong:
+            self.show("listening")
         audio, voiced, confirmed, live_text = self.listen_live(self.device.take_preroll(), require_wake=True)
+        giga_text = ""
+        if not strong and not confirmed:
+            verdict, giga_text = self.phonetic_check(audio)
+            if verdict is False:
+                self.log(f"ложное срабатывание (слабое, GigaAM: «{giga_text}»)" if self.log_text else "ложное срабатывание (слабое)")
+                self.save_trigger(audio, key, strong, confirmed, giga_text, "", False)
+                return None
+            confirmed = bool(verdict)
         watch = Stopwatch()
         heard = self.transcribe(audio) if voiced else ""
         watch.lap("речь→текст")
@@ -188,7 +228,9 @@ class Listener(threading.Thread):
         verified, command = strip_wake(heard)
         if self.verify and not verified and not confirmed:
             self.log(f"ложное срабатывание: «{heard}»" if self.log_text else "ложное срабатывание")
+            self.save_trigger(audio, key, strong, confirmed, giga_text, heard, False)
             return None
+        self.save_trigger(audio, key, strong, confirmed, giga_text, heard, True)
         if not verified:
             command = self.after_wake(heard, live_text) if confirmed else remove_wake(heard)
         self.hold(True)
@@ -244,7 +286,7 @@ class Listener(threading.Thread):
                 self.log(f"⏱ {watch.line()}")
                 if first is not None:
                     self.wake.reset()
-                    barged = device.play(itertools.chain([first], chunks), brain.tts.sample_rate, self.wake.feed if self.listen_cfg.get("barge_in") else None)
+                    barged = device.play(itertools.chain([first], chunks), brain.tts.sample_rate, self.barge_monitor if self.listen_cfg.get("barge_in") else None)
                     if barged:
                         self.log("↪ перебил")
                         return barged

@@ -13,6 +13,10 @@ WAKE_RE = re.compile(
 )
 
 
+STRONG_WAIT_BLOCKS = 6
+GIGA_WAKE_RE = re.compile(r"\bбоб|миньон|подручн|\bсбер|\bпоп\b|\bбоп\b", re.IGNORECASE)
+
+
 def normalize(text: str) -> str:
     return text.lower().replace("ё", "е")
 
@@ -45,6 +49,10 @@ class VoskWake:
         self.model = Model(str(model_dir))
         self.sample_rate = sample_rate
         self.grammar = json.dumps([*cfg["grammar"], "[unk]"], ensure_ascii=False)
+        decoys = cfg.get("decoys", [])
+        self.strong_grammar = json.dumps([*cfg["grammar"], *decoys, "[unk]"], ensure_ascii=False) if decoys else None
+        self.strong = False
+        self.pending: tuple[str, int] | None = None
         self.triggers = [
             (key, tuple(tokens))
             for key, variants in cfg["triggers"].items()
@@ -53,7 +61,9 @@ class VoskWake:
         self.reset()
 
     def reset(self) -> None:
+        self.pending = None
         self.recognizer = KaldiRecognizer(self.model, self.sample_rate, self.grammar)
+        self.decoy_recognizer = KaldiRecognizer(self.model, self.sample_rate, self.strong_grammar) if self.strong_grammar else None
 
     def live(self) -> "LiveSpeech":
         return LiveSpeech(self.model, self.sample_rate)
@@ -70,15 +80,33 @@ class VoskWake:
             None,
         )
 
+    def _decode(self, recognizer, block: np.ndarray) -> str:
+        if recognizer.AcceptWaveform(block.tobytes()):
+            return json.loads(recognizer.Result()).get("text", "")
+        return json.loads(recognizer.PartialResult()).get("partial", "")
+
     def feed(self, block: np.ndarray) -> str | None:
-        if self.recognizer.AcceptWaveform(block.tobytes()):
-            text = json.loads(self.recognizer.Result()).get("text", "")
-        else:
-            text = json.loads(self.recognizer.PartialResult()).get("partial", "")
-        found = self._match(text)
-        if found:
+        found = self._match(self._decode(self.recognizer, block))
+        strong = self._match(self._decode(self.decoy_recognizer, block)) if self.decoy_recognizer else None
+        if strong:
+            self.strong = True
             self.reset()
-        return found
+            return strong
+        if self.pending is not None:
+            key, left = self.pending
+            if left <= 1:
+                self.strong = False
+                self.reset()
+                return key
+            self.pending = (key, left - 1)
+            return None
+        if found:
+            if not self.decoy_recognizer:
+                self.strong = False
+                self.reset()
+                return found
+            self.pending = (found, STRONG_WAIT_BLOCKS)
+        return None
 
 
 class LiveSpeech:
