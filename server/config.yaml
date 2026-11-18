@@ -53,6 +53,9 @@ tts:
     minion: minion
     bob: minion
 
+music:
+  volume: 0.8
+
 persona:
   name: Боб
 

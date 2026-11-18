@@ -16,6 +16,7 @@ dependencies = [
     "anthropic>=0.40",
     "num2words>=0.5.13",
     "ddgs>=9.0",
+    "yandex-music>=3.2.2",
 ]
 
 [project.scripts]

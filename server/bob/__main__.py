@@ -17,10 +17,19 @@ def pick_voice(tts, cfg: dict, name: str | None, speaker: str | None, speed: flo
     return {**base, **({"speaker": speaker} if speaker else {}), **({"speed": speed} if speed else {})}
 
 
+class DryDevice:
+    alive = True
+
+    def music(self, payload: dict) -> None:
+        details = f" {payload.get('title', '')} — {payload.get('artist', '')}" if payload.get("action") == "play" else ""
+        print(f"   ♪ {payload['action']}{details}")
+
+
 def run_ask(cfg: dict, text: str, speak: bool, voice_name: str | None = None) -> None:
     from .assistant import Assistant
     from .settings import DeviceSettings
     assistant = Assistant(cfg, DeviceSettings())
+    assistant.music.bind({"mac": DryDevice()})
     watch = Stopwatch()
     answer = assistant.handle(text)
     watch.lap("модель")
@@ -40,6 +49,29 @@ def run_say(cfg: dict, text: str, voice_name: str | None, speaker: str | None, s
     tts = load_voice(cfg)
     voice = pick_voice(tts, cfg, voice_name, speaker, speed)
     Speaker(cfg["audio"]["output_device"]).play(tts.synth(text, voice), tts.sample_rate)
+
+
+def run_music(cfg: dict, query: str, kind: str) -> None:
+    import httpx
+    from .music import Music
+    music = Music(cfg)
+    items, name = music.resolve(query, kind)
+    print(f"Найдено: {name}, треков в очереди: {len(items)}")
+    for index, item in enumerate(items[:5], 1):
+        print(f"  {index}. {item.label()}")
+    url = music.link(items[0])
+    head = httpx.head(url, follow_redirects=True, timeout=10)
+    print(f"Ссылка на первый трек: HTTP {head.status_code}, {int(head.headers.get('content-length', 0)) / 1e6:.1f} МБ")
+
+
+def run_control(cfg: dict, payload: dict) -> None:
+    import json
+    from websockets.sync.client import connect
+    from .net import device_token
+    with connect(f"ws://127.0.0.1:{cfg['network']['port']}") as ws:
+        ws.send(json.dumps({"type": "hello", "role": "control", "token": device_token(cfg)}))
+        ws.send(json.dumps(payload, ensure_ascii=False))
+        print(json.loads(ws.recv(timeout=120))["result"])
 
 
 def run_demo(cfg: dict, device: str, voice: bool, scale: float) -> None:
@@ -100,6 +132,7 @@ def run_voice(cfg: dict, use_mic: bool) -> None:
     with Mic(audio_cfg["sample_rate"], audio_cfg["input_device"], audio_cfg["preroll_seconds"]) as mic:
         local = LocalDevice("mac", mic, Speaker(audio_cfg["output_device"], mic), displays)
         server.devices["mac"] = local
+        local.music_listener = lambda message: assistant.music.on_event("mac", message)
         listener = Listener(local, brain)
         listener.start()
         listener.join()
@@ -125,6 +158,18 @@ def main() -> None:
     demo.add_argument("device")
     demo.add_argument("--no-voice", action="store_true", help="показать вариант «только текст»")
     demo.add_argument("--slow", type=float, default=1.0, help="во сколько раз замедлить, например 3")
+    music = sub.add_parser("music", help="найти музыку и проверить ссылку, не играя")
+    music.add_argument("query")
+    music.add_argument("--kind", default="auto", choices=["auto", "track", "artist", "album", "playlist", "wave"])
+    play = sub.add_parser("music-play", help="включить музыку на подключённом устройстве")
+    play.add_argument("device")
+    play.add_argument("query")
+    play.add_argument("--kind", default="auto")
+    play.add_argument("--volume", type=float, help="громкость плеера 0..1 (0 — без звука)")
+    control = sub.add_parser("music-control", help="pause, resume, next, previous, stop, volume_up, volume_down")
+    control.add_argument("device")
+    control.add_argument("action")
+    sub.add_parser("yandex-login", help="войти в Яндекс Музыку по коду и сохранить токен")
     sub.add_parser("levels", help="уровень звука с подключённых устройств, 10 секунд")
     listen = sub.add_parser("listen", help="слушать микрофон Мака и устройства (по умолчанию)")
     listen.add_argument("--no-mic", action="store_true", help="не слушать микрофон Мака, только устройства")
@@ -133,6 +178,15 @@ def main() -> None:
     cfg = load_config()
     if args.command == "ask":
         run_ask(cfg, args.text, args.say, args.voice)
+    elif args.command == "music":
+        run_music(cfg, args.query, args.kind)
+    elif args.command == "music-play":
+        run_control(cfg, {"type": "music_play", "device": args.device, "query": args.query, "kind": args.kind, "volume": args.volume})
+    elif args.command == "music-control":
+        run_control(cfg, {"type": "music_control", "device": args.device, "action": args.action})
+    elif args.command == "yandex-login":
+        from .yandex_login import login
+        login()
     elif args.command == "plate-demo":
         run_demo(cfg, args.device, not args.no_voice, args.slow)
     elif args.command == "levels":

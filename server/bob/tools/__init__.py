@@ -33,12 +33,14 @@ class Registry:
         return result, failed
 
 
-def build_registry(cfg: dict, memory) -> Registry:
+def build_registry(cfg: dict, memory, music) -> Registry:
     from ..memory import specs as memory_specs
+    from ..music import specs as music_specs
     return Registry([
         Tool(**clock.spec(cfg)),
         Tool(**weather.spec(cfg)),
         Tool(**calc.spec()),
         Tool(**search.spec()),
         *[Tool(**spec) for spec in memory_specs(memory)],
+        *[Tool(**spec) for spec in music_specs(music)],
     ])

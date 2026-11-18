@@ -7,6 +7,7 @@ from typing import Iterable
 import numpy as np
 
 from .audio import BLOCK, Mic, Speaker
+from .macplayer import MacPlayer
 
 
 class Displays:
@@ -58,6 +59,9 @@ class Device:
     def chime(self) -> None:
         return None
 
+    def music(self, payload: dict) -> None:
+        return None
+
     def play(self, chunks: Iterable[np.ndarray], rate: int) -> None:
         raise NotImplementedError
 
@@ -73,6 +77,8 @@ class LocalDevice(Device):
         self.speaker = speaker
         self.displays = displays
         self.sample_rate = mic.sample_rate
+        self.music_listener = None
+        self.player = MacPlayer(lambda event: self.music_listener and self.music_listener({"event": event}))
 
     def read(self, timeout: float | None = None) -> np.ndarray | None:
         return self.mic.read(timeout)
@@ -85,6 +91,9 @@ class LocalDevice(Device):
 
     def plate(self, phase: str, request: str = "", answer: str = "", voice: bool = True) -> None:
         self.displays.publish(self.name, plate_payload(phase, request, answer, voice))
+
+    def music(self, payload: dict) -> None:
+        self.player.handle(payload)
 
     def chime(self) -> None:
         self.speaker.chime()
@@ -105,6 +114,7 @@ class RemoteDevice(Device):
         self.closed = threading.Event()
         self.send_lock = threading.Lock()
         self.played = threading.Event()
+        self.music_listener = None
         self.peak = 0
         self.rms = 0.0
 
@@ -159,6 +169,9 @@ class RemoteDevice(Device):
     def chime(self) -> None:
         self._send(json.dumps({"type": "chime"}))
 
+    def music(self, payload: dict) -> None:
+        self._send(json.dumps({"type": "music", **payload}))
+
     def play(self, chunks: Iterable[np.ndarray], rate: int) -> None:
         self.muted.set()
         self.played.clear()
@@ -177,6 +190,8 @@ class RemoteDevice(Device):
     def on_text(self, message: dict) -> None:
         if message.get("type") == "played":
             self.played.set()
+        elif message.get("type") == "music_event" and self.music_listener:
+            self.music_listener(message)
 
     @property
     def alive(self) -> bool:

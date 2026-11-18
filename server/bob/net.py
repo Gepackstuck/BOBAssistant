@@ -34,6 +34,8 @@ class DeviceServer(threading.Thread):
         self.displays = displays
         self.token = device_token(cfg)
         self.devices: dict[str, Device] = {}
+        self.music = brain.assistant.music
+        self.music.bind(self.devices)
         brain.settings.subscribe(self.push_settings)
 
     def push_settings(self, name: str, voice: bool) -> None:
@@ -88,6 +90,16 @@ class DeviceServer(threading.Thread):
                 result = levels
             elif kind == "announce":
                 result = self.announce(name, str(request.get("text", "")), request.get("voice"))
+            elif kind == "music_play":
+                try:
+                    result = self.music.play(str(request.get("query", "")), str(request.get("kind", "auto")), name, request.get("volume"))
+                except Exception as error:
+                    result = f"ошибка: {error}"
+            elif kind == "music_control":
+                try:
+                    result = self.music.control(str(request.get("action", "")), name)
+                except Exception as error:
+                    result = f"ошибка: {error}"
             elif kind == "demo":
                 result = self.demo(name, bool(request.get("voice", True)), float(request.get("scale", 1.0)))
             else:
@@ -123,6 +135,7 @@ class DeviceServer(threading.Thread):
             return
         device = RemoteDevice(name, connection, self.cfg["audio"]["preroll_seconds"], int(hello.get("rate", 16000)))
         self.devices[name] = device
+        device.music_listener = lambda message: self.music.on_event(name, message)
         print(f"[{name}] подключено", flush=True)
         Listener(device, self.brain).start()
         try:

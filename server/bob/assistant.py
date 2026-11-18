@@ -3,6 +3,7 @@ import time
 
 from .llm import make_llm
 from .memory import Memory
+from .music import Music, current_device
 from .settings import DeviceSettings
 from .tools import build_registry
 from .tools.clock import describe, now
@@ -36,7 +37,8 @@ class Assistant:
         self.cfg = cfg
         self.settings = settings
         self.memory = Memory()
-        self.registry = build_registry(cfg, self.memory)
+        self.music = Music(cfg)
+        self.registry = build_registry(cfg, self.memory, self.music)
         self.llm = make_llm(cfg["llm"])
         self.session_seconds = cfg["llm"]["session_minutes"] * 60
         self.session: list = self.llm.new_session()
@@ -51,6 +53,9 @@ class Assistant:
         return prompt
 
     def fast_path(self, text: str, device: str) -> str | None:
+        played = self.music.fast(text, device)
+        if played is not None:
+            return played
         if VOICE_OFF_RE.search(text):
             self.settings.set_voice(device, False)
             return "Хорошо, теперь отвечаю только текстом."
@@ -76,6 +81,7 @@ class Assistant:
         quick = self.fast_path(text, device)
         if quick is not None:
             return quick
+        current_device.set(device)
         if time.monotonic() - self.last_turn > self.session_seconds:
             self.session = self.llm.new_session()
         answer = self.llm.reply(self.session, self.system_prompt(), text, self.registry)

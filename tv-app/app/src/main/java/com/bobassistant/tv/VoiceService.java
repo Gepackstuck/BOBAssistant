@@ -35,6 +35,7 @@ public final class VoiceService extends Service implements Link.Callback {
     private Link link;
     private Overlay overlay;
     private MediaControl media;
+    private MusicPlayer music;
     private final Player player = new Player();
     private Thread recorder;
     private volatile boolean recording;
@@ -48,11 +49,12 @@ public final class VoiceService extends Service implements Link.Callback {
         super.onCreate();
         overlay = new Overlay(this);
         media = new MediaControl(this);
+        music = new MusicPlayer(this, this::musicEvent);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+        startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
         boolean probe = intent != null && intent.getBooleanExtra("probe", false);
         if (running) {
             if (probe) {
@@ -87,6 +89,7 @@ public final class VoiceService extends Service implements Link.Callback {
             link.stop();
         }
         player.stop();
+        music.stop();
         overlay.destroy();
         super.onDestroy();
     }
@@ -251,17 +254,24 @@ public final class VoiceService extends Service implements Link.Callback {
                 overlay.show(phase, message.optString("request"), message.optString("answer"), message.optBoolean("voice", true));
                 break;
             case "media":
-                if (message.optBoolean("hold")) {
-                    media.hold();
-                } else {
-                    media.release();
+                if (!music.isActive()) {
+                    if (message.optBoolean("hold")) {
+                        media.hold();
+                    } else {
+                        media.release();
+                    }
                 }
+                break;
+            case "music":
+                handleMusic(message);
                 break;
             case "chime":
                 Player.chime();
                 break;
             case "audio_start":
-                media.hold();
+                if (!music.isActive()) {
+                    media.hold();
+                }
                 player.start(message.optInt("rate", 48000), this::played);
                 break;
             case "audio_end":
@@ -269,6 +279,37 @@ public final class VoiceService extends Service implements Link.Callback {
                 break;
             default:
                 break;
+        }
+    }
+
+    private void handleMusic(JSONObject message) {
+        String action = message.optString("action");
+        float volume = (float) message.optDouble("volume", 0.8);
+        switch (action) {
+            case "play":
+                music.play(message.optString("url"), volume, message.optString("title"), message.optString("artist"));
+                break;
+            case "pause":
+                music.pause();
+                break;
+            case "resume":
+                music.resume();
+                break;
+            case "stop":
+                music.stop();
+                break;
+            case "volume":
+                music.setVolume(volume);
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void musicEvent(String event, int position, boolean playing) {
+        try {
+            link.sendJson(new JSONObject().put("type", "music_event").put("event", event).put("position", position).put("playing", playing));
+        } catch (JSONException ignored) {
         }
     }
 

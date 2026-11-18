@@ -83,6 +83,7 @@ class Listener(threading.Thread):
         if value != self.held:
             self.held = value
             self.device.media(value)
+            self.brain.assistant.music.duck(self.device.name, value)
 
     def run(self) -> None:
         silent_blocks = 0
