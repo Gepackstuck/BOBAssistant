@@ -7,7 +7,7 @@ from datetime import datetime
 
 from .config import ROOT
 from .devices import Device
-from .listen import Vad, capture
+from .listen import Vad, capture, looks_unfinished
 from .wake import make_wake, remove_wake, strip_wake
 
 PLATE_INTERVAL = 0.12
@@ -141,7 +141,7 @@ class Listener(threading.Thread):
 
     def listen_live(self, preroll, start_timeout=None, require_wake=False, min_speech=0.0):
         live = self.wake.live()
-        shown = {"on": False, "text": None, "at": 0.0}
+        shown = {"on": False, "text": None, "at": 0.0, "latest": ""}
 
         def on_block(block):
             text = live.feed(block)
@@ -151,6 +151,7 @@ class Listener(threading.Thread):
                     return
             elif not text:
                 return
+            shown["latest"] = text
             if not shown["on"]:
                 shown["on"] = True
                 self.hold(True)
@@ -159,7 +160,7 @@ class Listener(threading.Thread):
                 shown["text"], shown["at"] = text, now
                 self.show("listening", text)
 
-        audio, voiced = capture(self.device, self.vad, self.listen_cfg, preroll, start_timeout, on_block, min_speech)
+        audio, voiced = capture(self.device, self.vad, self.listen_cfg, preroll, start_timeout, on_block, min_speech, lambda: looks_unfinished(shown["latest"]))
         return audio, voiced, shown["on"]
 
     def handle(self, key: str) -> None:

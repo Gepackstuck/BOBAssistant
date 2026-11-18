@@ -17,8 +17,9 @@ wake:
     bob: [[боб]]
 
 listen:
-  max_seconds: 30
-  silence_ms: 2000
+  max_seconds: 10
+  silence_ms: 1000
+  extend_ms: 2000
   followup_seconds: 5
   max_followups: 3
   conversation_seconds: 90

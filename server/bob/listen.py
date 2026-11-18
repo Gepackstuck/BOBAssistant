@@ -4,6 +4,16 @@ from silero_vad import load_silero_vad
 
 
 WINDOW = 512
+DANGLING = {
+    "и", "а", "но", "или", "да", "что", "чтобы", "как", "если", "когда", "где", "потому",
+    "в", "во", "на", "с", "со", "к", "ко", "по", "про", "о", "об", "от", "до", "из", "за", "для",
+    "у", "без", "при", "над", "под", "через", "между", "не", "ни", "то",
+}
+
+
+def looks_unfinished(text: str) -> bool:
+    last = text.lower().split()[-1:] if text else []
+    return bool(last) and last[0].strip(".,!?-—") in DANGLING
 
 
 class Vad:
@@ -21,10 +31,11 @@ class Vad:
         self.model.reset_states()
 
 
-def capture(mic, vad: Vad, cfg: dict, preroll: list[np.ndarray], start_timeout: float | None = None, on_block=None, min_speech: float = 0.0) -> tuple[np.ndarray, bool]:
+def capture(mic, vad: Vad, cfg: dict, preroll: list[np.ndarray], start_timeout: float | None = None, on_block=None, min_speech: float = 0.0, unfinished=None) -> tuple[np.ndarray, bool]:
     rate = mic.sample_rate
     block_ms = 1000 * len(preroll[0]) / rate if preroll else 80
     silence_limit = cfg["silence_ms"] / block_ms
+    extra_limit = cfg.get("extend_ms", 0) / block_ms
     start_limit = (start_timeout or cfg["start_timeout_seconds"]) * 1000 / block_ms
     max_blocks = cfg["max_seconds"] * 1000 / block_ms
     vad.reset()
@@ -52,7 +63,7 @@ def capture(mic, vad: Vad, cfg: dict, preroll: list[np.ndarray], start_timeout: 
             heard = heard or voiced_ms >= min_speech * 1000
         elif heard:
             quiet += 1
-            if quiet >= silence_limit:
+            if quiet >= silence_limit + (extra_limit if unfinished and unfinished() else 0):
                 break
         else:
             waited += 1
