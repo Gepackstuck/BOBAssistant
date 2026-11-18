@@ -9,6 +9,7 @@ wake:
   vosk_model: models/vosk/vosk-model-small-ru-0.22
   vosk_url: https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
   grammar: [окей, ок, сбер, миньон, подручный, боб]
+  verify_with_stt: true
   triggers:
     okey_sber: [[окей, сбер], [ок, сбер]]
     minion: [[миньон]]
@@ -17,7 +18,8 @@ wake:
 
 listen:
   max_seconds: 10
-  silence_ms: 700
+  silence_ms: 1200
+  followup_seconds: 8
   start_timeout_seconds: 5
   speech_threshold: 0.5
 
@@ -56,6 +58,11 @@ persona:
 
 debug:
   log_text: false
+
+network:
+  host: 0.0.0.0
+  port: 8765
+  token_env: BOB_TOKEN
 
 place:
   name: null

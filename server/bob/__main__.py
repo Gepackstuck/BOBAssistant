@@ -1,24 +1,10 @@
 import argparse
-import itertools
 import sys
+import threading
 import time
 
 from .config import load_config
-
-
-class Stopwatch:
-    def __init__(self):
-        self.marks: list[tuple[str, float]] = []
-        self.last = time.perf_counter()
-
-    def lap(self, name: str) -> None:
-        current = time.perf_counter()
-        self.marks.append((name, current - self.last))
-        self.last = current
-
-    def line(self) -> str:
-        total = sum(seconds for _, seconds in self.marks)
-        return " | ".join(f"{name} {seconds:.2f} с" for name, seconds in self.marks) + f" | итого {total:.2f} с"
+from .pipeline import Stopwatch
 
 
 def load_voice(cfg: dict):
@@ -55,79 +41,28 @@ def run_say(cfg: dict, text: str, voice_name: str | None, speaker: str | None, s
     Speaker(cfg["audio"]["output_device"]).play(tts.synth(text, voice), tts.sample_rate)
 
 
-def run_voice(cfg: dict) -> None:
+def run_voice(cfg: dict, use_mic: bool) -> None:
     from .assistant import Assistant
     from .audio import Mic, Speaker
-    from .listen import Vad, capture
+    from .devices import LocalDevice
+    from .net import DeviceServer
+    from .pipeline import Brain, Listener
     from .stt import Whisper
-    from .wake import VoskWake, remove_wake, strip_wake
 
     audio_cfg = cfg["audio"]
-    log_text = cfg["debug"]["log_text"]
     started = time.perf_counter()
     print("Загружаю модели…")
     assistant = Assistant(cfg)
     assistant.llm.warm_up()
-    tts = load_voice(cfg)
-    whisper = Whisper(cfg["stt"])
-    wake = VoskWake(cfg["wake"], audio_cfg["sample_rate"])
-    vad = Vad(cfg["listen"]["speech_threshold"])
+    brain = Brain(cfg, assistant, Whisper(cfg["stt"]), load_voice(cfg))
+    DeviceServer(cfg, brain).start()
     print(f"Готово за {time.perf_counter() - started:.1f} с. Скажите «Боб», «Миньон», «Подручный» или «Окей, Сбер».")
-
+    if not use_mic:
+        threading.Event().wait()
     with Mic(audio_cfg["sample_rate"], audio_cfg["input_device"], audio_cfg["preroll_seconds"]) as mic:
-        speaker = Speaker(audio_cfg["output_device"], mic)
-        silent_blocks = 0
-        while True:
-            block = mic.read(timeout=1)
-            if block is None:
-                continue
-            if silent_blocks >= 0:
-                silent_blocks = silent_blocks + 1 if not block.any() else -1
-                if silent_blocks == 40:
-                    print("⚠️ Микрофон отдаёт тишину: у терминала нет доступа к микрофону (Настройки → Конфиденциальность → Микрофон).")
-                    silent_blocks = -1
-            phrase = wake.feed(block)
-            if not phrase:
-                continue
-            print(f"🎙 «{phrase}», слушаю")
-            audio, voiced = capture(mic, vad, cfg["listen"], mic.take_preroll())
-            watch = Stopwatch()
-            heard = whisper.transcribe(audio) if voiced else ""
-            watch.lap("речь→текст")
-            if log_text:
-                print(f"   whisper: «{heard}» ({len(audio) / mic.sample_rate:.1f} с)")
-            verified, command = strip_wake(heard)
-            if not verified:
-                print(f"   ложное срабатывание: «{heard}»" if log_text else "   ложное срабатывание")
-                wake.reset()
-                continue
-            if not command:
-                speaker.chime()
-                audio, voiced = capture(mic, vad, cfg["listen"], [])
-                watch = Stopwatch()
-                heard = whisper.transcribe(audio) if voiced else ""
-                watch.lap("речь→текст")
-                if log_text:
-                    print(f"   whisper после сигнала: «{heard}» ({len(audio) / mic.sample_rate:.1f} с)")
-                command = remove_wake(heard)
-            if not command:
-                print("   не услышал команду")
-                wake.reset()
-                continue
-            print(f"Вы: {command}")
-            answer = assistant.handle(command)
-            watch.lap("модель")
-            print(f"Боб: {answer or '(молча)'}")
-            if answer:
-                chunks = tts.stream(answer, tts.voice_for(phrase))
-                first = next(chunks, None)
-                watch.lap("синтез")
-                print(f"⏱ {watch.line()}")
-                if first is not None:
-                    speaker.play_stream(itertools.chain([first], chunks), tts.sample_rate)
-            else:
-                print(f"⏱ {watch.line()}")
-            wake.reset()
+        listener = Listener(LocalDevice("mac", mic, Speaker(audio_cfg["output_device"], mic)), brain)
+        listener.start()
+        listener.join()
 
 
 def main() -> None:
@@ -142,7 +77,8 @@ def main() -> None:
     say.add_argument("--voice", help="профиль голоса из config.yaml (alisa, minion)")
     say.add_argument("--speaker", help="голос Silero: aidar, baya, kseniya, xenia, eugene")
     say.add_argument("--speed", type=float, help="ускорение и высота, например 1.35")
-    sub.add_parser("listen", help="слушать микрофон (по умолчанию)")
+    listen = sub.add_parser("listen", help="слушать микрофон Мака и устройства (по умолчанию)")
+    listen.add_argument("--no-mic", action="store_true", help="не слушать микрофон Мака, только устройства")
     args = parser.parse_args()
     sys.stdout.reconfigure(line_buffering=True)
     cfg = load_config()
@@ -152,7 +88,7 @@ def main() -> None:
         run_say(cfg, args.text, args.voice, args.speaker, args.speed)
     else:
         try:
-            run_voice(cfg)
+            run_voice(cfg, not getattr(args, "no_mic", False))
         except KeyboardInterrupt:
             print("\nПока!")
 

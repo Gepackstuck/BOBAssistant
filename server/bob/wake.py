@@ -76,3 +76,7 @@ class VoskWake:
         if found:
             self.reset()
         return found
+
+
+def make_wake(cfg: dict, sample_rate: int):
+    return VoskWake(cfg, sample_rate)

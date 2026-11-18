@@ -3,6 +3,8 @@ from typing import Iterator
 
 import numpy as np
 import torch
+from fractions import Fraction
+from scipy.signal import resample_poly
 
 from .config import resolve
 from .models import ensure_file
@@ -43,8 +45,8 @@ class SileroTts:
         speed = voice.get("speed", 1.0)
         if speed == 1.0:
             return audio
-        positions = np.arange(0, len(audio) - 1, speed)
-        return np.interp(positions, np.arange(len(audio)), audio).astype(np.float32)
+        up, down = Fraction(speed).limit_denominator(20).denominator, Fraction(speed).limit_denominator(20).numerator
+        return resample_poly(audio, up, down).astype(np.float32)
 
     def stream(self, text: str, voice: dict | None = None) -> Iterator[np.ndarray]:
         chosen = voice or self.voices[self.default_voice]

@@ -2,7 +2,6 @@ import numpy as np
 import torch
 from silero_vad import load_silero_vad
 
-from .audio import Mic
 
 WINDOW = 512
 
@@ -22,11 +21,11 @@ class Vad:
         self.model.reset_states()
 
 
-def capture(mic: Mic, vad: Vad, cfg: dict, preroll: list[np.ndarray]) -> tuple[np.ndarray, bool]:
+def capture(mic, vad: Vad, cfg: dict, preroll: list[np.ndarray], start_timeout: float | None = None) -> tuple[np.ndarray, bool]:
     rate = mic.sample_rate
     block_ms = 1000 * len(preroll[0]) / rate if preroll else 80
     silence_limit = cfg["silence_ms"] / block_ms
-    start_limit = cfg["start_timeout_seconds"] * 1000 / block_ms
+    start_limit = (start_timeout or cfg["start_timeout_seconds"]) * 1000 / block_ms
     max_blocks = cfg["max_seconds"] * 1000 / block_ms
     vad.reset()
     blocks = list(preroll)
