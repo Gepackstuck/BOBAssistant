@@ -10,6 +10,20 @@ BLOCK = 1280
 WATCHDOG_SECONDS = 3.0
 
 
+BUILTIN_NAMES = ("macbook", "imac", "mac mini", "mac studio", "mac pro", "built-in", "встроенный")
+
+
+def builtin_input() -> int | None:
+    return next(
+        (
+            index
+            for index, info in enumerate(sd.query_devices())
+            if info["max_input_channels"] > 0 and any(name in info["name"].lower() for name in BUILTIN_NAMES)
+        ),
+        None,
+    )
+
+
 class Mic:
     def __init__(self, sample_rate: int, device: str | int | None, preroll_seconds: float):
         self.sample_rate = sample_rate
@@ -29,7 +43,7 @@ class Mic:
             channels=1,
             dtype="int16",
             blocksize=BLOCK,
-            device=self.device,
+            device=builtin_input() if self.device == "builtin" else self.device,
             callback=self._callback,
         )
 

@@ -1,6 +1,6 @@
 audio:
   sample_rate: 16000
-  input_device: null
+  input_device: builtin
   output_device: null
   preroll_seconds: 3.0
 
