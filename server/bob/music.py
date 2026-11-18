@@ -269,8 +269,14 @@ class Music:
             if best is None:
                 raise RuntimeError(NOT_FOUND.format(query))
             target, result = best.type, best.result
-            if target in ("track", "album") and not candidate_matches(query, result):
+            if target not in ("track", "artist", "album", "playlist"):
                 raise RuntimeError(NOT_FOUND.format(query))
+            mismatch = (target in ("track", "album") and not candidate_matches(query, result)) or (target == "artist" and share(query, "", [result.name]) < MATCH_SHARE)
+            if mismatch:
+                result = self.best_match(query, "track", "tracks", client.search(query, type_="track"))
+                if result is None:
+                    raise RuntimeError(NOT_FOUND.format(query))
+                target = "track"
         else:
             attribute = {"track": "tracks", "artist": "artists", "album": "albums", "playlist": "playlists"}[kind]
             if kind in ("track", "album"):
@@ -292,7 +298,12 @@ class Music:
     def play(self, query: str = "", kind: str = "auto", device: str | None = None, volume: float | None = None, artist: str | None = None, title: str | None = None) -> str:
         device = device or current_device.get()
         query = " ".join(part for part in (artist, title) if part) or query
-        resolved = self.resolve(query, kind if kind in KINDS else "auto")
+        try:
+            resolved = self.resolve(query, kind if kind in KINDS else "auto")
+        except RuntimeError:
+            if kind != "station":
+                raise
+            resolved = self.resolve(query, "auto")
         if not resolved.items:
             raise RuntimeError("ничего не нашёл")
         with self.lock:
@@ -476,7 +487,7 @@ def specs(music: Music) -> list[dict]:
     return [
         {
             "name": "play_music",
-            "description": "Включить музыку из Яндекс Музыки: исполнитель, песня, альбом, плейлист или «Моя волна». Вызывай на просьбы «включи/поставь/сыграй …» про музыку. Для настроения, занятия, эпохи и жанра («что-нибудь спокойное», «для работы», «девяностые», «джаз», «грустное») используй kind=station и в query название настроения, занятия, эпохи или жанра. Просто «включи музыку» или «Моя волна» — kind=wave.",
+            "description": "Включить музыку из Яндекс Музыки: исполнитель, песня, альбом, плейлист или «Моя волна». Вызывай на просьбы «включи/поставь/сыграй …» про музыку. Для настроения, занятия, эпохи и жанра («что-нибудь спокойное», «для работы», «девяностые», «джаз», «грустное») используй kind=station и в query название настроения, занятия, эпохи или жанра. Если назван исполнитель, песня или альбом, станция не нужна: kind=track, artist или album. Просто «включи музыку» или «Моя волна» — kind=wave.",
             "parameters": {
                 "type": "object",
                 "properties": {

@@ -24,7 +24,7 @@ listen:
   followup_seconds: 5
   max_followups: 3
   conversation_seconds: 90
-  followup_min_speech: 0.6
+  followup_min_speech: 0.3
   start_timeout_seconds: 5
   speech_threshold: 0.5
 
