@@ -9,11 +9,14 @@ from dataclasses import dataclass, field
 from yandex_music import Client
 
 from .config import ROOT
+from .pronounce import latin_to_speech
 
 TOKEN_PATH = ROOT / "secrets" / "yandex_music_token.json"
 WAVE = "user:onyourwave"
 VOLUME_STEP = 0.15
 MAX_BITRATE = 192
+MATCH_SHARE = 0.6
+NOT_FOUND = "по запросу «{}» нет подходящего исполнителя, песни или альбома. Не угадывай и не придумывай, кто это: скажи, что не расслышал, и попроси повторить название."
 KINDS = ("auto", "track", "artist", "album", "playlist", "wave")
 
 current_device = contextvars.ContextVar("current_device", default="mac")
@@ -33,6 +36,27 @@ def translit(text: str) -> str:
 
 def same_artist(chosen: str, other: str) -> bool:
     return difflib.SequenceMatcher(None, translit(chosen), translit(other)).ratio() >= 0.8
+
+
+def words(text: str) -> list[str]:
+    return re.findall(r"\w+", latin_to_speech(text).lower().replace("ё", "е"))
+
+
+def close(first: str, second: str) -> bool:
+    if len(first) >= 4 and len(second) >= 4 and (first in second or second in first):
+        return True
+    return difflib.SequenceMatcher(None, first, second).ratio() >= 0.75
+
+
+def covers(wanted: str, title: str, artists: list[str]) -> bool:
+    wanted_words = words(wanted)
+    have = words(" ".join([title, *artists]))
+    found = sum(1 for word in wanted_words if any(close(word, other) for other in have))
+    return bool(wanted_words) and found / len(wanted_words) >= MATCH_SHARE
+
+
+def candidate_matches(wanted: str, candidate) -> bool:
+    return covers(wanted, candidate.title or "", [artist.name for artist in (candidate.artists or [])])
 
 PAUSE_RE = re.compile(r"^\s*(?:поставь\s+на\s+паузу|пауза|приостанови(?:\s+музыку)?)\b", re.IGNORECASE)
 RESUME_RE = re.compile(r"^\s*(?:продолжи|продолжай|возобнови|играй\s+дальше|сними\s+с\s+паузы)\b", re.IGNORECASE)
@@ -158,13 +182,18 @@ class Music:
         if kind == "auto":
             best = found.best
             if best is None:
-                raise RuntimeError("ничего не нашёл")
+                raise RuntimeError(NOT_FOUND.format(query))
             target, result = best.type, best.result
+            if target in ("track", "album") and not candidate_matches(query, result):
+                raise RuntimeError(NOT_FOUND.format(query))
         else:
             group = getattr(found, {"track": "tracks", "artist": "artists", "album": "albums", "playlist": "playlists"}[kind], None)
-            result = group.results[0] if group and group.results else None
+            results = group.results if group and group.results else []
+            if kind in ("track", "album"):
+                results = [candidate for candidate in results[:10] if candidate_matches(query, candidate)]
+            result = results[0] if results else None
         if result is None:
-            raise RuntimeError("ничего не нашёл")
+            raise RuntimeError(NOT_FOUND.format(query))
         if target == "artist":
             return Resolved(self.artist_items(result), result.name, self.artist_alternatives(query, result))
         if target == "album":
@@ -174,8 +203,9 @@ class Music:
             return Resolved([to_item(track) for track in self.full(result.fetch_tracks())], result.title)
         return Resolved([to_item(result)], result.title)
 
-    def play(self, query: str, kind: str = "auto", device: str | None = None, volume: float | None = None) -> str:
+    def play(self, query: str = "", kind: str = "auto", device: str | None = None, volume: float | None = None, artist: str | None = None, title: str | None = None) -> str:
         device = device or current_device.get()
+        query = " ".join(part for part in (artist, title) if part) or query
         resolved = self.resolve(query, kind if kind in KINDS else "auto")
         if not resolved.items:
             raise RuntimeError("ничего не нашёл")
@@ -359,13 +389,15 @@ def specs(music: Music) -> list[dict]:
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Что искать: исполнитель, название песни, альбома или плейлиста. Для kind=wave можно пусто."},
-                    "kind": {"type": "string", "enum": list(KINDS), "description": "auto — сам определит по поиску"},
+                    "query": {"type": "string", "description": "Что искать, если непонятно, исполнитель это или песня. Для kind=wave можно пусто."},
+                    "artist": {"type": "string", "description": "Исполнитель, если он назван. Пиши так, как сказал пользователь, даже по-русски («мэдкид»)."},
+                    "title": {"type": "string", "description": "Название песни или альбома, если оно названо."},
+                    "kind": {"type": "string", "enum": list(KINDS), "description": "auto — сам определит по поиску. Если назван исполнитель и песня, ставь track; исполнитель и альбом — album."},
                 },
-                "required": ["query"],
+                "required": [],
                 "additionalProperties": False,
             },
-            "run": lambda args: music.play(args["query"], args.get("kind", "auto")),
+            "run": lambda args: music.play(args.get("query", ""), args.get("kind", "auto"), artist=args.get("artist"), title=args.get("title")),
         },
         {
             "name": "music_control",

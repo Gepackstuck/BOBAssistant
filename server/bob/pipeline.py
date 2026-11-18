@@ -1,12 +1,17 @@
 import itertools
+import json
 import threading
 import time
+import wave
+from datetime import datetime
 
+from .config import ROOT
 from .devices import Device
 from .listen import Vad, capture
 from .wake import make_wake, remove_wake, strip_wake
 
 PLATE_INTERVAL = 0.12
+UTTERANCES = ROOT / "data" / "utterances"
 
 
 class Stopwatch:
@@ -70,6 +75,26 @@ class Listener(threading.Thread):
 
     def log(self, message: str) -> None:
         print(f"[{self.device.name}] {message}", flush=True)
+
+    def transcribe(self, audio) -> str:
+        text = self.brain.transcribe(audio)
+        keep = self.brain.cfg["debug"].get("keep_utterances", 0)
+        if keep and self.device.name == "mac" and audio.size:
+            self.save_utterance(audio, text, keep)
+        return text
+
+    def save_utterance(self, audio, text: str, keep: int) -> None:
+        UTTERANCES.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        with wave.open(str(UTTERANCES / f"{stamp}.wav"), "wb") as file:
+            file.setnchannels(1)
+            file.setsampwidth(2)
+            file.setframerate(self.device.sample_rate)
+            file.writeframes(audio.astype("int16").tobytes())
+        with (UTTERANCES / "index.jsonl").open("a", encoding="utf-8") as index:
+            index.write(json.dumps({"file": f"{stamp}.wav", "text": text}, ensure_ascii=False) + "\n")
+        for old in sorted(UTTERANCES.glob("*.wav"))[:-keep]:
+            old.unlink()
 
     @property
     def voice(self) -> bool:
@@ -138,9 +163,10 @@ class Listener(threading.Thread):
             self.device.drain()
             return
         self.log(f"🎙 «{key}», слушаю")
+        self.show("listening")
         audio, voiced, shown = self.listen_live(self.device.take_preroll(), require_wake=True)
         watch = Stopwatch()
-        heard = self.brain.transcribe(audio) if voiced else ""
+        heard = self.transcribe(audio) if voiced else ""
         watch.lap("речь→текст")
         if self.log_text:
             self.log(f"whisper: «{heard}» ({len(audio) / self.device.sample_rate:.1f} с)")
@@ -157,7 +183,7 @@ class Listener(threading.Thread):
                 self.device.chime()
             audio, voiced, shown = self.listen_live([])
             watch = Stopwatch()
-            command = remove_wake(self.brain.transcribe(audio)) if voiced else ""
+            command = remove_wake(self.transcribe(audio)) if voiced else ""
             watch.lap("речь→текст")
         if not command:
             self.log("не услышал команду")
@@ -198,7 +224,7 @@ class Listener(threading.Thread):
             self.show("followup", command, answer, window)
             audio, voiced, shown = self.listen_live([], start_timeout=window, min_speech=self.listen_cfg["followup_min_speech"])
             watch = Stopwatch()
-            command = remove_wake(brain.transcribe(audio)) if voiced else ""
+            command = remove_wake(self.transcribe(audio)) if voiced else ""
             watch.lap("речь→текст")
             if command:
                 self.log("↪ уточнение")

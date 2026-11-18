@@ -64,6 +64,7 @@ persona:
 
 debug:
   log_text: false
+  keep_utterances: 0
 
 network:
   host: 0.0.0.0
