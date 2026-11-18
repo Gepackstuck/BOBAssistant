@@ -8,7 +8,9 @@ from .config import ROOT
 from .music import close, current_device, words
 
 CONFIG_PATH = ROOT / "secrets" / "home_assistant.json"
-CACHE_SECONDS = 60
+CACHE_SECONDS = 2
+CONFIRM_SECONDS = 4
+CONFIRM_STEP = 0.5
 SHARE = 0.6
 CONTROL_DOMAINS = ("light", "switch", "fan", "cover", "climate", "input_boolean", "lock")
 READ_DOMAINS = ("sensor", "binary_sensor", "climate", "light", "switch", "cover", "fan", "lock")
@@ -93,22 +95,29 @@ class Home:
         self.call("POST", f"/api/services/{domain}/{service}", data)
         self.refresh()
 
-    def lamp_payload(self, entity_id: str) -> dict:
-        entity = self.call("GET", f"/api/states/{entity_id}")
+    def lamp_payload(self, entity_id: str, expect_on: bool | None = None) -> dict:
+        deadline = time.time() + (CONFIRM_SECONDS if expect_on is not None else 0)
+        while True:
+            entity = self.call("GET", f"/api/states/{entity_id}")
+            on = entity["state"] == "on"
+            if expect_on is None or on == expect_on or time.time() >= deadline:
+                break
+            time.sleep(CONFIRM_STEP)
         attributes = entity.get("attributes", {})
-        on = entity["state"] == "on"
+        pending = expect_on is not None and on != expect_on
+        shown_on = expect_on if pending else on
         brightness = attributes.get("brightness")
         return {
-            "type": "lamp", "name": attributes.get("friendly_name", entity_id), "on": on,
+            "type": "lamp", "name": attributes.get("friendly_name", entity_id), "on": shown_on, "pending": pending,
             "rgb": list(attributes.get("rgb_color") or [255, 205, 130]),
-            "brightness": round(brightness * 100 / 255) if brightness is not None else (100 if on else 0),
+            "brightness": round(brightness * 100 / 255) if brightness is not None else (100 if shown_on else 0),
         }
 
-    def announce_lamp(self, entity_id: str) -> None:
+    def announce_lamp(self, entity_id: str, expect_on: bool | None = None) -> None:
         if self.notify is None or not entity_id.startswith("light."):
             return
         try:
-            self.notify(current_device.get(), self.lamp_payload(entity_id))
+            self.notify(current_device.get(), self.lamp_payload(entity_id, expect_on))
         except Exception as error:
             print(f"[дом] {error}", flush=True)
 
@@ -120,7 +129,7 @@ class Home:
         data: dict = {"entity_id": entity_id}
         if action == "off":
             self.service(domain, {"cover": "close_cover", "lock": "lock"}.get(domain, "turn_off"), data)
-            self.announce_lamp(entity_id)
+            self.announce_lamp(entity_id, False)
             return f"{title}: выключено."
         if action == "toggle":
             self.service(domain, "toggle", data)
@@ -143,7 +152,7 @@ class Home:
                         raise RuntimeError(f"не знаю цвет «{color}»")
                     data["color_name"] = name_en
         self.service(domain, {"cover": "open_cover", "lock": "unlock"}.get(domain, "turn_on"), data)
-        self.announce_lamp(entity_id)
+        self.announce_lamp(entity_id, True)
         details = f", яркость {data['brightness_pct']} процентов" if "brightness_pct" in data else ""
         return f"{title}: включено{', ' + color if color else ''}{details}."
 

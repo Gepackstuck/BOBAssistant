@@ -7,6 +7,7 @@ struct LampState: Equatable {
     var green: Double
     var blue: Double
     var brightness: Int
+    var pending: Bool = false
 }
 
 final class LampView: NSView {
@@ -58,7 +59,7 @@ final class LampView: NSView {
         titleLabel.textColor = theme.primary
         stateLabel.textColor = theme.secondary
         titleLabel.stringValue = state.name
-        stateLabel.stringValue = state.on ? "Включена, \(state.brightness)%" : "Выключена"
+        stateLabel.stringValue = state.pending ? "Жду ответа лампы…" : (state.on ? "Включена, \(state.brightness)%" : "Выключена")
         let color = NSColor(calibratedRed: state.red, green: state.green, blue: state.blue, alpha: 1)
         glow.colors = state.on
             ? [color.withAlphaComponent(0.55).cgColor, color.withAlphaComponent(0).cgColor]

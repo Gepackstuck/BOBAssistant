@@ -100,7 +100,8 @@ final class Link {
                     name: object["name"] as? String ?? "Лампа",
                     on: object["on"] as? Bool ?? false,
                     red: rgb.count > 0 ? rgb[0] : 1, green: rgb.count > 1 ? rgb[1] : 0.8, blue: rgb.count > 2 ? rgb[2] : 0.5,
-                    brightness: (object["brightness"] as? NSNumber)?.intValue ?? 0
+                    brightness: (object["brightness"] as? NSNumber)?.intValue ?? 0,
+                    pending: object["pending"] as? Bool ?? false
                 ))
             case "music_card":
                 self.onCard?(CardState(
