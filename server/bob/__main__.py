@@ -41,6 +41,29 @@ def run_say(cfg: dict, text: str, voice_name: str | None, speaker: str | None, s
     Speaker(cfg["audio"]["output_device"]).play(tts.synth(text, voice), tts.sample_rate)
 
 
+def run_announce(cfg: dict, device: str, text: str, voice: str | None) -> None:
+    import json
+    from websockets.sync.client import connect
+    from .net import device_token
+    with connect(f"ws://127.0.0.1:{cfg['network']['port']}") as ws:
+        ws.send(json.dumps({"type": "hello", "role": "control", "token": device_token(cfg)}))
+        ws.send(json.dumps({"type": "announce", "device": device, "text": text, "voice": voice}, ensure_ascii=False))
+        print(json.loads(ws.recv(timeout=120))["result"])
+
+
+def run_levels(cfg: dict) -> None:
+    import json
+    import time as clock
+    from websockets.sync.client import connect
+    from .net import device_token
+    with connect(f"ws://127.0.0.1:{cfg['network']['port']}") as ws:
+        ws.send(json.dumps({"type": "hello", "role": "control", "token": device_token(cfg)}))
+        for _ in range(10):
+            ws.send(json.dumps({"type": "levels"}))
+            print(json.loads(ws.recv(timeout=10))["result"], flush=True)
+            clock.sleep(1)
+
+
 def run_voice(cfg: dict, use_mic: bool) -> None:
     from .assistant import Assistant
     from .audio import Mic, Speaker
@@ -77,6 +100,11 @@ def main() -> None:
     say.add_argument("--voice", help="профиль голоса из config.yaml (alisa, minion)")
     say.add_argument("--speaker", help="голос Silero: aidar, baya, kseniya, xenia, eugene")
     say.add_argument("--speed", type=float, help="ускорение и высота, например 1.35")
+    announce = sub.add_parser("announce", help="сказать фразу на подключённом устройстве")
+    announce.add_argument("device")
+    announce.add_argument("text")
+    announce.add_argument("--voice", help="профиль голоса из config.yaml (alisa, minion)")
+    sub.add_parser("levels", help="уровень звука с подключённых устройств, 10 секунд")
     listen = sub.add_parser("listen", help="слушать микрофон Мака и устройства (по умолчанию)")
     listen.add_argument("--no-mic", action="store_true", help="не слушать микрофон Мака, только устройства")
     args = parser.parse_args()
@@ -84,6 +112,10 @@ def main() -> None:
     cfg = load_config()
     if args.command == "ask":
         run_ask(cfg, args.text, args.say, args.voice)
+    elif args.command == "levels":
+        run_levels(cfg)
+    elif args.command == "announce":
+        run_announce(cfg, args.device, args.text, args.voice)
     elif args.command == "say":
         run_say(cfg, args.text, args.voice, args.speaker, args.speed)
     else:

@@ -21,7 +21,15 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Intent intent = getIntent();
+        if (intent.getBooleanExtra("stop", false)) {
+            stopService(new Intent(this, VoiceService.class));
+            finish();
+            return;
+        }
         Prefs.save(this, intent.getStringExtra("server"), intent.getStringExtra("token"), intent.getStringExtra("device"));
+        if (intent.hasExtra("gain")) {
+            Prefs.saveGain(this, intent.getFloatExtra("gain", 60f));
+        }
         status = new TextView(this);
         status.setTextColor(Color.WHITE);
         status.setBackgroundColor(Color.rgb(18, 18, 24));
@@ -32,7 +40,11 @@ public final class MainActivity extends Activity {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1);
         } else if (Prefs.configured(this)) {
-            VoiceService.start(this);
+            if (intent.getBooleanExtra("probe", false)) {
+                startForegroundService(new Intent(this, VoiceService.class).putExtra("probe", true));
+            } else {
+                VoiceService.start(this);
+            }
         }
     }
 
@@ -70,6 +82,7 @@ public final class MainActivity extends Activity {
             text.append("\n").append(getString(R.string.status_no_overlay));
         }
         text.append("\nЭхоподавление: ").append(VoiceService.echoCanceller);
+        text.append("\nМикрофон: ").append(VoiceService.micSetup);
         status.setText(text);
         handler.postDelayed(this::refresh, 1000);
     }

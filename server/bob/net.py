@@ -29,6 +29,28 @@ class DeviceServer(threading.Thread):
         self.cfg = cfg
         self.brain = brain
         self.token = device_token(cfg)
+        self.devices: dict[str, RemoteDevice] = {}
+
+    def announce(self, name: str, text: str, voice: str | None) -> str:
+        device = self.devices.get(name)
+        if device is None or not device.alive:
+            return f"устройство {name} не подключено"
+        tts = self.brain.tts
+        profile = tts.voices.get(voice or "", tts.voices[tts.default_voice])
+        device.show("answer", text)
+        device.play(tts.stream(text, profile), tts.sample_rate)
+        device.show("idle")
+        return "ok"
+
+    def control(self, connection) -> None:
+        for message in connection:
+            request = json.loads(message)
+            if request.get("type") == "levels":
+                levels = {name: {"peak": d.peak, "rms": round(d.rms, 1), "alive": d.alive} for name, d in self.devices.items()}
+                connection.send(json.dumps({"type": "result", "result": levels}))
+            if request.get("type") == "announce":
+                result = self.announce(str(request.get("device", "tv")), str(request.get("text", "")), request.get("voice"))
+                connection.send(json.dumps({"type": "result", "result": result}, ensure_ascii=False))
 
     def handle(self, connection) -> None:
         try:
@@ -38,8 +60,12 @@ class DeviceServer(threading.Thread):
         if hello.get("type") != "hello" or not secrets.compare_digest(str(hello.get("token", "")), self.token):
             connection.close(code=4401, reason="bad token")
             return
+        if hello.get("role") == "control":
+            self.control(connection)
+            return
         name = str(hello.get("device") or "tv")[:32]
         device = RemoteDevice(name, connection, self.cfg["audio"]["preroll_seconds"], int(hello.get("rate", 16000)))
+        self.devices[name] = device
         print(f"[{name}] подключено", flush=True)
         Listener(device, self.brain).start()
         try:

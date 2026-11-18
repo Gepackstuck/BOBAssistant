@@ -70,11 +70,17 @@ class RemoteDevice(Device):
         self.muted = threading.Event()
         self.closed = threading.Event()
         self.send_lock = threading.Lock()
+        self.peak = 0
+        self.rms = 0.0
 
     def feed(self, payload: bytes) -> None:
         if self.muted.is_set():
             return
-        self.pending = np.concatenate([self.pending, np.frombuffer(payload, dtype="<i2")])
+        samples = np.frombuffer(payload, dtype="<i2")
+        if samples.size:
+            self.peak = max(int(np.abs(samples).max()), int(self.peak * 0.97))
+            self.rms = 0.95 * self.rms + 0.05 * float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
+        self.pending = np.concatenate([self.pending, samples])
         while len(self.pending) >= BLOCK:
             block, self.pending = self.pending[:BLOCK].copy(), self.pending[BLOCK:]
             if self.frames.full():

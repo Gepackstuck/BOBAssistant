@@ -8,6 +8,9 @@ final class Prefs {
     private static final String SERVER = "server";
     private static final String TOKEN = "token";
     private static final String DEVICE = "device";
+    private static final String SOURCE = "source";
+    private static final String CHANNELS = "channels";
+    private static final String GAIN = "gain";
 
     private Prefs() {
     }
@@ -26,6 +29,26 @@ final class Prefs {
 
     static String device(Context context) {
         return prefs(context).getString(DEVICE, "tv");
+    }
+
+    static int source(Context context) {
+        return prefs(context).getInt(SOURCE, 6);
+    }
+
+    static int channels(Context context) {
+        return prefs(context).getInt(CHANNELS, 1);
+    }
+
+    static float gain(Context context) {
+        return prefs(context).getFloat(GAIN, 60f);
+    }
+
+    static void saveGain(Context context, float gain) {
+        prefs(context).edit().putFloat(GAIN, gain).apply();
+    }
+
+    static void saveMic(Context context, int source, int channels) {
+        prefs(context).edit().putInt(SOURCE, source).putInt(CHANNELS, channels).apply();
     }
 
     static boolean configured(Context context) {
