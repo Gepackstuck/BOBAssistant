@@ -2,6 +2,7 @@ import Foundation
 
 final class Link {
     var onPlate: ((PlateState) -> Void)?
+    var onLamp: ((LampState) -> Void)?
     var onCard: ((CardState) -> Void)?
     var onSettings: ((Bool, String, Int, String) -> Void)?
     var onConnection: ((Bool) -> Void)?
@@ -92,6 +93,14 @@ final class Link {
                     voice: object["voice"] as? Bool ?? true,
                     theme: object["theme"] as? String ?? "dark",
                     window: (object["window"] as? NSNumber)?.doubleValue ?? 0
+                ))
+            case "lamp":
+                let rgb = (object["rgb"] as? [NSNumber])?.map { $0.doubleValue / 255 } ?? [1, 0.8, 0.5]
+                self.onLamp?(LampState(
+                    name: object["name"] as? String ?? "Лампа",
+                    on: object["on"] as? Bool ?? false,
+                    red: rgb.count > 0 ? rgb[0] : 1, green: rgb.count > 1 ? rgb[1] : 0.8, blue: rgb.count > 2 ? rgb[2] : 0.5,
+                    brightness: (object["brightness"] as? NSNumber)?.intValue ?? 0
                 ))
             case "music_card":
                 self.onCard?(CardState(

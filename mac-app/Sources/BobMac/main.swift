@@ -3,6 +3,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let plate = PlateWindow()
     private let card = CardWindow()
+    private let lamp = LampWindow()
     private var statusItem: NSStatusItem!
     private var link: Link!
     private let statusLine = NSMenuItem(title: "Нет связи с Бобом", action: nil, keyEquivalent: "")
@@ -54,6 +55,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let address = environment["BOB_SERVER"] ?? "ws://127.0.0.1:8765"
         link = Link(url: URL(string: address)!, token: Self.loadToken(), device: environment["BOB_DEVICE"] ?? "mac")
         link.onPlate = { [weak self] state in self?.plate.render(state) }
+        link.onLamp = { [weak self] state in
+            guard let self else { return }
+            self.lamp.render(state, theme: Theme.named(self.theme))
+        }
         link.onCard = { [weak self] state in
             guard let self else { return }
             self.card.render(state, theme: Theme.named(self.theme))
@@ -147,6 +152,23 @@ if arguments.count >= 2, arguments[1] == "--layout" {
         view.setFrameSize(size)
         view.layout()
         print("\(name.padding(toLength: 8, withPad: " ", startingAt: 0)) высота \(Int(size.height))  индикатор y=\(Int(view.indicatorFrame.minY)) центр=\(Int(view.indicatorFrame.midY))")
+    }
+    exit(0)
+}
+if arguments.count >= 5, arguments[1] == "--lamp-snapshot" {
+    _ = NSApplication.shared
+    let on = arguments[4] == "on"
+    let view = LampView(frame: NSRect(origin: .zero, size: LampView.size))
+    view.apply(LampState(name: "Лампа в спальне", on: on, red: 1, green: 0.1, blue: 0.15, brightness: 70), theme: Theme.named(arguments[3]))
+    let canvas = NSView(frame: NSRect(x: 0, y: 0, width: LampView.size.width + 72, height: LampView.size.height + 72))
+    canvas.wantsLayer = true
+    canvas.layer?.backgroundColor = (arguments[3] == "light" ? NSColor(calibratedRed: 0.62, green: 0.76, blue: 0.9, alpha: 1) : NSColor(calibratedRed: 0.2, green: 0.3, blue: 0.15, alpha: 1)).cgColor
+    view.frame.origin = NSPoint(x: 36, y: 36)
+    canvas.addSubview(view)
+    canvas.layoutSubtreeIfNeeded()
+    if let bitmap = canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds) {
+        canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
+        try? bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: arguments[2]))
     }
     exit(0)
 }

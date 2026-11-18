@@ -6,6 +6,7 @@ from num2words import num2words
 from .capabilities import HELP_RE, help_text
 from .llm import make_llm
 from .memory import Memory
+from .home import Home
 from .music import Music, current_device
 from .planner import Planner
 from .settings import VOLUME_MAX, VOLUME_MIN, VOLUME_STEP, DeviceSettings
@@ -21,6 +22,7 @@ SYSTEM = """Ты {name}, домашний голосовой ассистент.
 - За свежими фактами (новости, курсы, счёт матча, цены) обращайся к web_search и пересказывай коротко, без ссылок. У новостей в начале стоит дата: сверяй её с сегодняшней. Если за нужный день данных нет, так и скажи («свежих данных не нашёл», можно назвать, на какую дату есть).
 - На любой вопрос о фактах про человека, группу, место, фильм, песню или понятие («кто такой», «сколько лет», «когда родился», «что такое») сначала вызови encyclopedia и отвечай по её тексту, а не по памяти. На «кто такой» отвечай, кем человек является и чем известен, без возраста и дат. Возраст называй только если о нём спросили, бери число из пометки «Полных лет на сегодня», сам не считай. В ответе называй, о ком речь («Лолита Милявская, ей шестьдесят три года»). Фразу «не нашёл» можно говорить только после вызова инструмента.
 - Таймеры, напоминания, будильники и список покупок ставь только инструментами set_timer, set_reminder, set_alarm, shopping_list (время переводи в секунды, минуты или ЧЧ:ММ сам), потом коротко подтверди. На «доброе утро» и «что на сегодня» вызови morning_brief и перескажи его.
+- Умным домом (свет, лампы, розетки, шторы, сценарии, датчики) управляй только инструментами home_control, home_scene, home_status, если они есть. Не говори, что включил, пока инструмент не вернул успех.
 - Когда просят запомнить или рассказывают о себе важное, вызови remember. Когда просят забыть — forget.
 - Если подходящего инструмента нет или он не ответил, честно скажи, что не знаешь. Ничего не выдумывай.
 - Если инструмент вернул ошибку или ничего не нашёл (особенно в музыке), не рассказывай, кто или что это, и не угадывай: скажи, что не расслышал, и попроси повторить название.
@@ -77,7 +79,8 @@ class Assistant:
         self.memory = Memory()
         self.music = Music(cfg)
         self.planner = Planner(cfg)
-        self.registry = build_registry(cfg, self.memory, self.music, self.planner)
+        self.home = Home()
+        self.registry = build_registry(cfg, self.memory, self.music, self.planner, self.home)
         self.llm = make_llm(cfg["llm"])
         self.session_seconds = cfg["llm"]["session_minutes"] * 60
         self.session: list = self.llm.new_session()
