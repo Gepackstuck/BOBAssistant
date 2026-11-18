@@ -56,6 +56,9 @@ class Device:
     def media(self, hold: bool) -> None:
         return None
 
+    def card(self, payload: dict) -> None:
+        return None
+
     def chime(self) -> None:
         return None
 
@@ -94,6 +97,9 @@ class LocalDevice(Device):
 
     def music(self, payload: dict) -> None:
         self.player.handle(payload)
+
+    def card(self, payload: dict) -> None:
+        self.displays.publish(self.name, payload)
 
     @property
     def peak(self) -> int:

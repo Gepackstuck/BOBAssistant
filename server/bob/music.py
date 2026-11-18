@@ -16,8 +16,19 @@ WAVE = "user:onyourwave"
 VOLUME_STEP = 0.15
 MAX_BITRATE = 192
 MATCH_SHARE = 0.6
+STATION_TYPES = ("mood", "activity", "epoch", "genre", "personal", "editorial")
+STATION_HINTS = [
+    (r"весел|радост|позитив", "mood:happy"), (r"бодр|энергич", "mood:energetic"), (r"расслаб|отдых", "mood:relaxed"),
+    (r"для\s+сна|засып|спать|сон\b", "activity:fall-asleep"), (r"работ", "activity:work-background"),
+    (r"учеб|учёб|учит|концентрац|сосредоточ", "activity:study-background"), (r"тренир|спорт|зал\b", "activity:workout"),
+    (r"\bбег|пробеж", "activity:run"), (r"вечерин|тусов", "activity:party"), (r"дорог|путешеств", "activity:road-trip"),
+    (r"за\s+рул|машин", "activity:driving"), (r"просыпа|утр|будильн", "activity:wake-up"), (r"романт|свидани", "activity:romantic-date"),
+    (r"пятидесят", "epoch:fifties"), (r"шестидесят", "epoch:sixties"), (r"семидесят", "epoch:seventies"), (r"восьмидесят", "epoch:eighties"),
+    (r"девяност", "epoch:nineties"), (r"нулев|двухтысяч", "epoch:zeroes"), (r"десят(?:ых|ые)", "epoch:tenths"), (r"двадцат(?:ых|ые)", "epoch:twenties"),
+    (r"вечн\w+\s+хит", "epoch:the-greatest-hits"),
+]
 NOT_FOUND = "по запросу «{}» нет подходящего исполнителя, песни или альбома. Не угадывай и не придумывай, кто это: скажи, что не расслышал, и попроси повторить название."
-KINDS = ("auto", "track", "artist", "album", "playlist", "wave")
+KINDS = ("auto", "track", "artist", "album", "playlist", "wave", "station")
 
 current_device = contextvars.ContextVar("current_device", default="mac")
 
@@ -95,6 +106,7 @@ class Resolved:
     items: list
     name: str
     alternatives: list = field(default_factory=list)
+    station: str | None = None
 
 
 @dataclass
@@ -103,6 +115,7 @@ class Session:
     index: int = 0
     state: str = "stopped"
     wave: bool = False
+    station: str = WAVE
     ducked: bool = False
     volume: float = 0.8
     position: int = 0
@@ -122,6 +135,7 @@ class Music:
         self.lock = threading.RLock()
         self.sessions: dict[str, Session] = {}
         self.devices: dict = {}
+        self.stations: list | None = None
 
     def bind(self, devices: dict) -> None:
         self.devices = devices
@@ -161,9 +175,51 @@ class Music:
         ids = [short.track_id for short in shorts]
         return self.api().tracks(ids) if ids else []
 
-    def wave_batch(self, after=None) -> list[Item]:
-        station = self.api().rotor_station_tracks(WAVE, queue=str(after.track.id) if after else None)
-        return [to_item(entry.track) for entry in (station.sequence or [])]
+    def wave_batch(self, after=None, station: str = WAVE) -> list[Item]:
+        batch = self.api().rotor_station_tracks(station, queue=str(after.track.id) if after else None)
+        return [to_item(entry.track) for entry in (batch.sequence or [])]
+
+    def station_list(self) -> list[tuple[str, str, list[str]]]:
+        if self.stations is None:
+            self.stations = [
+                (f"{entry.station.id.type}:{entry.station.id.tag}", entry.station.name, words(entry.station.name))
+                for entry in self.api().rotor_stations_list()
+                if entry.station.id.type in STATION_TYPES
+            ]
+        return self.stations
+
+    def find_station(self, text: str) -> tuple[str, str]:
+        stations = self.station_list()
+        lowered = text.lower().replace("ё", "е")
+        hinted = next((identifier for pattern, identifier in STATION_HINTS if re.search(pattern, lowered)), None)
+        if hinted:
+            return next((identifier, name) for identifier, name, _ in stations if identifier == hinted)
+        wanted = [word for word in words(text) if len(word) > 2]
+        best, best_score = None, 0.0
+        for identifier, name, name_words in stations:
+            matched = sum(1 for word in wanted if any(other.startswith(word[:5]) or word.startswith(other[:5]) for other in name_words if len(other) > 2))
+            score = matched / len(wanted) if wanted else 0.0
+            if score > best_score or (score == best_score and best and len(name) < len(best[1])):
+                best, best_score = (identifier, name), score
+        if best is None or best_score < 0.99:
+            raise RuntimeError(f"нет станции «{text}». Спроси, какое настроение, занятие, эпоху или жанр включить (например, спокойное, для работы, девяностые, джаз)")
+        return best
+
+    def cover_url(self, item: Item, size: str = "200x200") -> str:
+        uri = getattr(item.track, "cover_uri", None)
+        return f"https://{uri.replace('%%', size)}" if uri else ""
+
+    def card_payload(self, device: str) -> dict:
+        session = self.sessions.get(device)
+        if session is None or session.state == "stopped" or not session.queue:
+            return {"type": "music_card", "visible": False}
+        item = session.queue[session.index]
+        return {"type": "music_card", "visible": True, "title": item.title, "artist": item.artist, "cover": self.cover_url(item), "state": session.state}
+
+    def publish_card(self, device: str) -> None:
+        target = self.devices.get(device)
+        if target is not None and hasattr(target, "card"):
+            target.card(self.card_payload(device))
 
     def artist_alternatives(self, query: str, chosen) -> list:
         client = self.api()
@@ -202,6 +258,9 @@ class Music:
         client = self.api()
         if kind == "wave":
             return Resolved(self.wave_batch(), "Моя волна")
+        if kind == "station":
+            identifier, name = self.find_station(query)
+            return Resolved(self.wave_batch(None, identifier), name, station=identifier)
         found = client.search(query, type_="all" if kind == "auto" else kind)
         target = kind
         result = None
@@ -238,7 +297,8 @@ class Music:
             raise RuntimeError("ничего не нашёл")
         with self.lock:
             session = self.session(device)
-            session.queue, session.index, session.wave = resolved.items, 0, kind == "wave"
+            session.queue, session.index, session.wave = resolved.items, 0, kind == "wave" or bool(resolved.station)
+            session.station = resolved.station or WAVE
             session.alternatives = list(resolved.alternatives)
             if volume is not None:
                 session.volume = volume
@@ -267,8 +327,9 @@ class Music:
         item = session.queue[session.index]
         self.send(device, {"action": "play", "url": self.link(item), "title": item.title, "artist": item.artist, "volume": session.volume})
         session.state, session.ducked = "playing", False
+        self.publish_card(device)
         if session.wave and session.index >= len(session.queue) - 2:
-            session.queue.extend(self.wave_batch(item))
+            session.queue.extend(self.wave_batch(item, session.station))
 
     def step(self, device: str, delta: int) -> str:
         with self.lock:
@@ -289,6 +350,7 @@ class Music:
             if session and session.state != "stopped":
                 self.send(device, {"action": "stop"})
             self.sessions.pop(device, None)
+        self.publish_card(device)
 
     def control(self, action: str, device: str | None = None) -> str:
         device = device or current_device.get()
@@ -302,10 +364,12 @@ class Music:
             if action == "pause":
                 self.send(device, {"action": "pause"})
                 session.state = "paused"
+                self.publish_card(device)
                 return "Пауза."
             if action == "resume":
                 self.send(device, {"action": "resume"})
                 session.state = "playing"
+                self.publish_card(device)
                 return "Продолжаю."
             if action == "next":
                 return self.step(device, 1)
@@ -412,7 +476,7 @@ def specs(music: Music) -> list[dict]:
     return [
         {
             "name": "play_music",
-            "description": "Включить музыку из Яндекс Музыки: исполнитель, песня, альбом, плейлист или «Моя волна». Вызывай на просьбы «включи/поставь/сыграй …» про музыку. Для настроения и жанров («что-нибудь спокойное») используй kind=wave.",
+            "description": "Включить музыку из Яндекс Музыки: исполнитель, песня, альбом, плейлист или «Моя волна». Вызывай на просьбы «включи/поставь/сыграй …» про музыку. Для настроения, занятия, эпохи и жанра («что-нибудь спокойное», «для работы», «девяностые», «джаз», «грустное») используй kind=station и в query название настроения, занятия, эпохи или жанра. Просто «включи музыку» или «Моя волна» — kind=wave.",
             "parameters": {
                 "type": "object",
                 "properties": {

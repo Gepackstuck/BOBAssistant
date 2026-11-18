@@ -7,7 +7,15 @@ final class Indicator: NSView {
     private let glow = CAGradientLayer()
     private let orb = CAGradientLayer()
     private let bars = (0..<5).map { _ in CAGradientLayer() }
-    private let heights: [CGFloat] = [10, 20, 13, 24, 11]
+    private let heights: [CGFloat] = [13, 21, 26, 19, 14]
+    private let rhythm: [[Double]] = [
+        [0.45, 1.0, 0.6, 0.9, 0.5, 0.8, 0.45],
+        [1.0, 0.5, 0.9, 0.4, 0.85, 0.55, 1.0],
+        [0.6, 0.9, 0.45, 1.0, 0.7, 0.4, 0.6],
+        [0.9, 0.45, 0.8, 0.6, 1.0, 0.5, 0.9],
+        [0.5, 0.85, 0.55, 0.95, 0.4, 0.9, 0.5]
+    ]
+    private let durations: [Double] = [1.05, 0.9, 1.2, 0.95, 1.1]
     private var mode: Mode?
 
     override var isFlipped: Bool { true }
@@ -35,9 +43,9 @@ final class Indicator: NSView {
         orb.mask = mask
         layer?.addSublayer(orb)
 
-        for bar in bars {
-            bar.colors = [Look.barTop.cgColor, Look.barBottom.cgColor]
-            bar.cornerRadius = 1.75
+        for (index, bar) in bars.enumerated() {
+            bar.colors = [Look.accent[index % 4].cgColor, Look.accent[(index + 1) % 4].cgColor]
+            bar.cornerRadius = 2
             layer?.addSublayer(bar)
         }
     }
@@ -51,8 +59,8 @@ final class Indicator: NSView {
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         glow.position = center
         orb.position = center
-        let width: CGFloat = 3.5
-        let gap: CGFloat = 3
+        let width: CGFloat = 4
+        let gap: CGFloat = 2.5
         let total = CGFloat(bars.count) * width + CGFloat(bars.count - 1) * gap
         for (index, bar) in bars.enumerated() {
             let height = heights[index] * Look.indicator / 26
@@ -74,14 +82,12 @@ final class Indicator: NSView {
         switch next {
         case .bars:
             for (index, bar) in bars.enumerated() {
-                let animation = CABasicAnimation(keyPath: "transform.scale.y")
-                animation.fromValue = 1.0
-                animation.toValue = 0.4
-                animation.duration = 0.45
-                animation.autoreverses = true
+                let animation = CAKeyframeAnimation(keyPath: "transform.scale.y")
+                animation.values = rhythm[index]
+                animation.duration = durations[index]
+                animation.calculationMode = .cubic
                 animation.repeatCount = .infinity
-                animation.timeOffset = Double(index) * 0.13
-                animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                animation.timeOffset = Double(index) * 0.11
                 bar.add(animation, forKey: "bar")
             }
         case .spin:

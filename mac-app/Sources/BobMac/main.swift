@@ -2,6 +2,7 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let plate = PlateWindow()
+    private let card = CardWindow()
     private var statusItem: NSStatusItem!
     private var link: Link!
     private let statusLine = NSMenuItem(title: "Нет связи с Бобом", action: nil, keyEquivalent: "")
@@ -49,11 +50,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let address = environment["BOB_SERVER"] ?? "ws://127.0.0.1:8765"
         link = Link(url: URL(string: address)!, token: Self.loadToken(), device: environment["BOB_DEVICE"] ?? "mac")
         link.onPlate = { [weak self] state in self?.plate.render(state) }
+        link.onCard = { [weak self] state in
+            guard let self else { return }
+            self.card.render(state, theme: Theme.named(self.theme))
+        }
         link.onSettings = { [weak self] voice, theme, volume in self?.apply(voice: voice, theme: theme, volume: volume) }
         link.onConnection = { [weak self] connected in
             self?.statusLine.title = connected ? "Подключено к Бобу" : "Нет связи с Бобом"
             if !connected {
                 self?.plate.render(PlateState(phase: "idle", request: "", answer: "", voice: true))
+                self?.card.hide()
             }
         }
         link.start()
@@ -74,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.theme = theme
         voiceItem.state = voice ? .on : .off
         themeItem.state = theme == "light" ? .on : .off
+        card.rerender(theme: Theme.named(theme))
     }
 
     @objc private func toggleVoice() {
@@ -129,6 +136,24 @@ if arguments.count >= 2, arguments[1] == "--layout" {
         view.setFrameSize(size)
         view.layout()
         print("\(name.padding(toLength: 8, withPad: " ", startingAt: 0)) высота \(Int(size.height))  индикатор y=\(Int(view.indicatorFrame.minY)) центр=\(Int(view.indicatorFrame.midY))")
+    }
+    exit(0)
+}
+if arguments.count >= 4, arguments[1] == "--card-snapshot" {
+    _ = NSApplication.shared
+    let theme = Theme.named(arguments[3])
+    let view = CardView(frame: NSRect(origin: .zero, size: CardView.size))
+    view.apply(CardState(visible: true, title: "ЗМ", artist: "Whole Lotta Swag", cover: "https://avatars.yandex.net/get-music-content/175191/034e9c06.a.6119880-2/200x200", paused: arguments.count > 4), theme: theme)
+    RunLoop.main.run(until: Date().addingTimeInterval(3))
+    let canvas = NSView(frame: NSRect(x: 0, y: 0, width: CardView.size.width + 72, height: CardView.size.height + 72))
+    canvas.wantsLayer = true
+    canvas.layer?.backgroundColor = (arguments[3] == "light" ? NSColor(calibratedRed: 0.62, green: 0.76, blue: 0.9, alpha: 1) : NSColor(calibratedRed: 0.2, green: 0.3, blue: 0.15, alpha: 1)).cgColor
+    view.frame.origin = NSPoint(x: 36, y: 36)
+    canvas.addSubview(view)
+    canvas.layoutSubtreeIfNeeded()
+    if let bitmap = canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds) {
+        canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
+        try? bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: arguments[2]))
     }
     exit(0)
 }

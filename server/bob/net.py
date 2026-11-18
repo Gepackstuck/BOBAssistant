@@ -112,6 +112,7 @@ class DeviceServer(threading.Thread):
         self.displays.add(name, connection)
         try:
             connection.send(json.dumps(self.brain.settings.snapshot(name)))
+            connection.send(json.dumps(self.brain.assistant.music.card_payload(name), ensure_ascii=False))
             for message in connection:
                 request = json.loads(message)
                 if request.get("type") == "set_voice":

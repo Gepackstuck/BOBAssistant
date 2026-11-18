@@ -2,6 +2,7 @@ import Foundation
 
 final class Link {
     var onPlate: ((PlateState) -> Void)?
+    var onCard: ((CardState) -> Void)?
     var onSettings: ((Bool, String, Int) -> Void)?
     var onConnection: ((Bool) -> Void)?
 
@@ -87,6 +88,14 @@ final class Link {
                     voice: object["voice"] as? Bool ?? true,
                     theme: object["theme"] as? String ?? "dark",
                     window: (object["window"] as? NSNumber)?.doubleValue ?? 0
+                ))
+            case "music_card":
+                self.onCard?(CardState(
+                    visible: object["visible"] as? Bool ?? false,
+                    title: object["title"] as? String ?? "",
+                    artist: object["artist"] as? String ?? "",
+                    cover: object["cover"] as? String ?? "",
+                    paused: (object["state"] as? String) == "paused"
                 ))
             case "settings":
                 self.onSettings?(object["voice"] as? Bool ?? true, object["theme"] as? String ?? "dark", (object["volume"] as? NSNumber)?.intValue ?? 100)
