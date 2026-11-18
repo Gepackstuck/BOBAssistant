@@ -38,10 +38,37 @@ def run_ask(cfg: dict, text: str, speak: bool, voice_name: str | None = None) ->
         from .audio import Speaker
         tts = load_voice(cfg)
         watch = Stopwatch()
-        samples = tts.synth(answer, pick_voice(tts, cfg, voice_name, None, None))
+        samples = tts.synth(answer.partition('|||')[0], pick_voice(tts, cfg, voice_name, None, None))
         watch.lap("синтез")
         Speaker(cfg["audio"]["output_device"]).play(samples, tts.sample_rate)
     print(f"⏱ {watch.line()}")
+
+
+def run_eval(cfg: dict, path: str, out: str | None) -> None:
+    from pathlib import Path
+    from .assistant import Assistant
+    from .settings import DeviceSettings
+    assistant = Assistant(cfg, DeviceSettings())
+    assistant.music.bind({"mac": DryDevice()})
+    lines = [f"# Сравнение: модель {cfg['llm'].get('model')}", ""]
+    fresh = True
+    for raw in Path(path).read_text(encoding="utf-8").splitlines():
+        if raw.startswith("#"):
+            continue
+        if not raw.strip():
+            fresh = True
+            continue
+        if fresh:
+            assistant.session = assistant.llm.new_session()
+            fresh = False
+        watch = Stopwatch()
+        answer = assistant.handle(raw.strip(), "mac")
+        watch.lap("модель")
+        spoken, _, extra = answer.partition("|||")
+        print(f"Вы: {raw.strip()}\nБоб: {spoken}" + (f" ‖ {extra}" if extra else "") + f"\n⏱ {watch.line()}\n")
+        lines += [f"**{raw.strip()}**", f"- голосом: {spoken}", *([f"- на плашке: {extra}"] if extra else []), f"- время: {watch.marks[0][1]:.1f} с", ""]
+    if out:
+        Path(out).write_text("\n".join(lines), encoding="utf-8")
 
 
 def run_say(cfg: dict, text: str, voice_name: str | None, speaker: str | None, speed: float | None) -> None:
@@ -177,6 +204,9 @@ def main() -> None:
     control = sub.add_parser("music-control", help="pause, resume, next, previous, stop, volume_up, volume_down")
     control.add_argument("device")
     control.add_argument("action")
+    evaluate = sub.add_parser("eval", help="прогнать эталонные фразы через ассистента без звука и музыки")
+    evaluate.add_argument("--file", default="../docs/reference-phrases.txt")
+    evaluate.add_argument("--out", help="сохранить результат в markdown")
     sub.add_parser("yandex-login", help="войти в Яндекс Музыку по коду и сохранить токен")
     sub.add_parser("levels", help="уровень звука с подключённых устройств, 10 секунд")
     listen = sub.add_parser("listen", help="слушать микрофон Мака и устройства (по умолчанию)")
@@ -186,6 +216,8 @@ def main() -> None:
     cfg = load_config()
     if args.command == "ask":
         run_ask(cfg, args.text, args.say, args.voice)
+    elif args.command == "eval":
+        run_eval(cfg, args.file, args.out)
     elif args.command == "music":
         run_music(cfg, args.query, args.kind)
     elif args.command == "music-play":

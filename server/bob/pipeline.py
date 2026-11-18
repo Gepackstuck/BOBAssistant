@@ -6,6 +6,7 @@ import wave
 from datetime import datetime
 
 from .config import ROOT
+from .assistant import DETAIL_MARK
 from .devices import Device
 from .listen import Vad, capture, looks_unfinished
 from .wake import make_wake, remove_wake, strip_wake
@@ -214,14 +215,17 @@ class Listener(threading.Thread):
             with brain.turn_lock:
                 answer = brain.assistant.handle(command, device.name)
             watch.lap("модель")
-            self.log(f"Боб: {answer or '(молча)'}")
+            spoken, _, extra = answer.partition(DETAIL_MARK)
+            spoken = spoken.strip()
+            shown = f"{spoken} {extra.strip()}".strip()
+            self.log(f"Боб: {spoken or '(молча)'}" + (f" ‖ на плашке: {extra.strip()}" if extra.strip() else ""))
             if not answer:
                 break
             voice = self.voice
-            self.show("answer", command, answer)
+            self.show("answer", command, shown)
             window = self.listen_cfg["followup_seconds"]
             if voice:
-                chunks = scaled(brain.tts.stream(answer, brain.tts.voice_for(key)), brain.settings.volume(device.name))
+                chunks = scaled(brain.tts.stream(spoken, brain.tts.voice_for(key)), brain.settings.volume(device.name))
                 first = next(chunks, None)
                 watch.lap("синтез")
                 self.log(f"⏱ {watch.line()}")
@@ -233,12 +237,12 @@ class Listener(threading.Thread):
                         return barged
             else:
                 self.log(f"⏱ {watch.line()}")
-                window = max(window, reading_seconds(answer))
+                window = max(window, reading_seconds(shown))
             turns += 1
             if turns > self.listen_cfg["max_followups"] or time.monotonic() - started > self.listen_cfg["conversation_seconds"]:
-                time.sleep(min(reading_seconds(answer), 6.0) if not voice else 1.5)
+                time.sleep(min(reading_seconds(shown), 6.0) if not voice else 1.5)
                 break
-            self.show("followup", command, answer, window)
+            self.show("followup", command, shown, window)
             audio, voiced, confirmed, live_text = self.listen_live([], start_timeout=window, min_speech=self.listen_cfg["followup_min_speech"])
             watch = Stopwatch()
             command = remove_wake(self.transcribe(audio)) if voiced else ""
