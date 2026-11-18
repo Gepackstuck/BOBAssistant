@@ -18,6 +18,7 @@ final class IndicatorView extends View {
     static final int BARS = 0;
     static final int SPIN = 1;
     static final int BREATHE = 2;
+    static final int SPEAK = 3;
 
     private static final int[] ACCENT = {
             Color.rgb(111, 168, 255), Color.rgb(181, 124, 255), Color.rgb(255, 127, 182),
@@ -27,12 +28,14 @@ final class IndicatorView extends View {
     private final Paint orb = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint bar = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint ripple = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
     private final ValueAnimator ticker = ValueAnimator.ofFloat(0f, 1f);
     private int mode = BREATHE;
 
     IndicatorView(Context context) {
         super(context);
+        ripple.setStyle(Paint.Style.STROKE);
         ticker.setDuration(1000);
         ticker.setRepeatCount(ValueAnimator.INFINITE);
         ticker.setInterpolator(new LinearInterpolator());
@@ -68,17 +71,30 @@ final class IndicatorView extends View {
         }
         float scale = 1f;
         float angle = 0f;
+        float strength = 1f;
         if (mode == BREATHE) {
             scale = 1.07f + 0.07f * (float) Math.sin(2 * Math.PI * t / 3f - Math.PI / 2);
+        } else if (mode == SPEAK) {
+            angle = -360f * ((t / 3.2f) % 1f);
+            strength = 0.75f + 0.25f * (float) Math.sin(2 * Math.PI * t / 0.7f);
         } else {
             angle = -360f * ((t / 1.4f) % 1f);
         }
         float radius = size / 2f * scale;
         float reach = Math.min(getWidth(), getHeight()) / 2f;
         glow.setShader(new RadialGradient(cx, cy, reach,
-                new int[]{Color.argb((int) (150 * scale / 1.14f), 181, 124, 255), Color.argb(70, 181, 124, 255), Color.argb(0, 181, 124, 255)},
+                new int[]{Color.argb((int) (150 * scale / 1.14f * strength), 181, 124, 255), Color.argb((int) (70 * strength), 181, 124, 255), Color.argb(0, 181, 124, 255)},
                 new float[]{0.45f, 0.7f, 1f}, Shader.TileMode.CLAMP));
         canvas.drawCircle(cx, cy, reach, glow);
+        if (mode == SPEAK) {
+            ripple.setStrokeWidth(Math.max(2f, reach / 16f));
+            for (int i = 0; i < 2; i++) {
+                float phase = ((t / 1.5f) + i * 0.5f) % 1f;
+                int base = ACCENT[i == 0 ? 0 : 2];
+                ripple.setColor(Color.argb((int) (190 * (1f - phase)), Color.red(base), Color.green(base), Color.blue(base)));
+                canvas.drawCircle(cx, cy, radius + (reach - radius) * phase, ripple);
+            }
+        }
         canvas.save();
         canvas.rotate(angle - 90f, cx, cy);
         SweepGradient sweep = new SweepGradient(cx, cy, ACCENT, new float[]{0f, 0.25f, 0.5f, 0.75f, 1f});

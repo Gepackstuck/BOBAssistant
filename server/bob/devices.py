@@ -33,8 +33,8 @@ class Displays:
                 pass
 
 
-def plate_payload(phase: str, request: str, answer: str, voice: bool, theme: str = "dark", window: float = 0) -> dict:
-    return {"type": "plate", "phase": phase, "request": request, "answer": answer, "voice": voice, "theme": theme, "window": window}
+def plate_payload(phase: str, request: str, answer: str, voice: bool, theme: str = "dark", window: float = 0, style: str = "plate") -> dict:
+    return {"type": "plate", "phase": phase, "request": request, "answer": answer, "voice": voice, "theme": theme, "window": window, "style": style}
 
 
 class Device:
@@ -129,6 +129,7 @@ class RemoteDevice(Device):
         self.send_lock = threading.Lock()
         self.played = threading.Event()
         self.music_listener = None
+        self.style_provider = None
         self.peak = 0
         self.rms = 0.0
 
@@ -175,7 +176,8 @@ class RemoteDevice(Device):
             self.closed.set()
 
     def plate(self, phase: str, request: str = "", answer: str = "", voice: bool = True, theme: str = "dark", window: float = 0) -> None:
-        self._send(json.dumps(plate_payload(phase, request, answer, voice, theme, window), ensure_ascii=False))
+        style = self.style_provider() if self.style_provider else "plate"
+        self._send(json.dumps(plate_payload(phase, request, answer, voice, theme, window, style), ensure_ascii=False))
 
     def media(self, hold: bool) -> None:
         self._send(json.dumps({"type": "media", "hold": hold}))

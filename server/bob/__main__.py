@@ -44,6 +44,16 @@ def run_ask(cfg: dict, text: str, speak: bool, voice_name: str | None = None) ->
     print(f"⏱ {watch.line()}")
 
 
+def run_style(cfg: dict, device: str, name: str) -> None:
+    import json
+    from websockets.sync.client import connect
+    from .net import device_token
+    with connect(f"ws://127.0.0.1:{cfg['network']['port']}") as ws:
+        ws.send(json.dumps({"type": "hello", "role": "control", "token": device_token(cfg)}))
+        ws.send(json.dumps({"type": "set_style", "device": device, "style": name}))
+        print(json.loads(ws.recv(timeout=10)).get("result"))
+
+
 def run_eval(cfg: dict, path: str, out: str | None) -> None:
     from pathlib import Path
     from .assistant import Assistant
@@ -214,6 +224,9 @@ def main() -> None:
     evaluate = sub.add_parser("eval", help="прогнать эталонные фразы через ассистента без звука и музыки")
     evaluate.add_argument("--file", default="../docs/reference-phrases.txt")
     evaluate.add_argument("--out", help="сохранить результат в markdown")
+    style = sub.add_parser("style", help="переключить оформление ответов устройства (plate или corner)")
+    style.add_argument("device")
+    style.add_argument("name", choices=["plate", "corner"])
     sub.add_parser("yandex-login", help="войти в Яндекс Музыку по коду и сохранить токен")
     sub.add_parser("levels", help="уровень звука с подключённых устройств, 10 секунд")
     listen = sub.add_parser("listen", help="слушать микрофон Мака и устройства (по умолчанию)")
@@ -223,6 +236,8 @@ def main() -> None:
     cfg = load_config()
     if args.command == "ask":
         run_ask(cfg, args.text, args.say, args.voice)
+    elif args.command == "style":
+        run_style(cfg, args.device, args.name)
     elif args.command == "eval":
         run_eval(cfg, args.file, args.out)
     elif args.command == "music":

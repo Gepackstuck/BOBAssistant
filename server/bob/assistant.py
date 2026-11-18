@@ -53,6 +53,8 @@ LEVEL_WORDS = {
     "десять": 10, "двадцать": 20, "тридцать": 30, "сорок": 40, "пятьдесят": 50,
     "шестьдесят": 60, "семьдесят": 70, "восемьдесят": 80, "девяносто": 90, "сто": 100,
 }
+STYLE_CORNER_RE = re.compile(r"(?:включи|поставь|сделай|переключи|верни|режим|оформление|вариант)[^.!?]*\b(?:угловое|угловой|угловую|уголок|угол|в\s+углу)\b|\b(?:угловое|угловой|уголок)\s+(?:оформление|режим|вариант)", re.IGNORECASE)
+STYLE_PLATE_RE = re.compile(r"(?:верни|включи|поставь|сделай)\s+(?:обычн\w+\s+|стандартн\w+\s+|прежн\w+\s+|старую\s+)?плашк\w+\s*$|плашка\s+как\s+раньше", re.IGNORECASE)
 LIGHT_STATE_RE = re.compile(r"какой\s+(?:сейчас\s+)?свет\s+(?:сейчас\s+)?(?:включ[её]н|горит)|что\s+(?:сейчас\s+)?(?:включено|горит)|(?:включ[её]н|горит)\s+ли\s+(?:весь\s+|какой-нибудь\s+)?свет|какие\s+лампы\s+(?:включены|горят)", re.IGNORECASE)
 EQUALIZER_ON_RE = re.compile(r"(?:включи|верни|сделай|поставь)\s+(?:разноцветн\w+|цветн\w+|красив\w+)\s+(?:эквалайзер|полоск\w+)|(?:эквалайзер|полоск\w+)\s+(?:разноцветн\w+|цветн\w+)", re.IGNORECASE)
 EQUALIZER_OFF_RE = re.compile(r"(?:верни|включи|сделай|поставь)\s+(?:обычн\w+|стандартн\w+|прежн\w+|классическ\w+)\s+(?:эквалайзер|полоск\w+)|(?:обычн\w+|классическ\w+)\s+(?:эквалайзер|полоск\w+)", re.IGNORECASE)
@@ -133,6 +135,16 @@ class Assistant:
             if current <= VOLUME_MIN:
                 return "Тише уже некуда."
             return self.voice_volume_reply(self.settings.set_volume(device, current - VOLUME_STEP))
+        if STYLE_CORNER_RE.search(text):
+            if not device.startswith("tv"):
+                return "Угловое оформление есть только на телевизоре, здесь доступна плашка."
+            self.settings.set_style(device, "corner")
+            return "Хорошо, теперь всё в левом нижнем углу."
+        if STYLE_PLATE_RE.search(text):
+            if not device.startswith("tv"):
+                return "Здесь и так плашка."
+            self.settings.set_style(device, "plate")
+            return "Хорошо, снова плашка."
         if EQUALIZER_ON_RE.search(text):
             self.settings.set_indicator(device, "colorful")
             return "Хорошо, теперь эквалайзер разноцветный."

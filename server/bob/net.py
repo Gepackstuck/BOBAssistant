@@ -112,6 +112,9 @@ class DeviceServer(threading.Thread):
                     for key, d in self.devices.items()
                 }
                 result = levels
+            elif kind == "set_style":
+                self.brain.settings.set_style(name, str(request.get("style", "plate")))
+                result = self.brain.settings.style(name)
             elif kind == "announce":
                 result = self.announce(name, str(request.get("text", "")), request.get("voice"))
             elif kind == "music_play":
@@ -169,6 +172,7 @@ class DeviceServer(threading.Thread):
             return
         device = RemoteDevice(name, connection, self.cfg["audio"]["preroll_seconds"], int(hello.get("rate", 16000)))
         self.devices[name] = device
+        device.style_provider = lambda: self.brain.settings.style(name)
         device.music_listener = lambda message: self.music.on_event(name, message)
         print(f"[{name}] подключено", flush=True)
         Listener(device, self.brain).start()

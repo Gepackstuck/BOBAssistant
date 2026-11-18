@@ -272,7 +272,7 @@ public final class VoiceService extends Service implements Link.Callback {
         connected = state;
         Log.i(TAG, state ? "connected" : "disconnected");
         if (!state) {
-            overlay.show("idle", "", "", true, "dark", 0f);
+            overlay.show("idle", "", "", true, "dark", "plate", 0f);
         }
     }
 
@@ -285,7 +285,7 @@ public final class VoiceService extends Service implements Link.Callback {
                 if ("listening".equals(phase) || "thinking".equals(phase) || "answer".equals(phase)) {
                     wakeScreen();
                 }
-                overlay.show(phase, message.optString("request"), message.optString("answer"), message.optBoolean("voice", true), message.optString("theme", "dark"), (float) message.optDouble("window", 0));
+                overlay.show(phase, message.optString("request"), message.optString("answer"), message.optBoolean("voice", true), message.optString("theme", "dark"), message.optString("style", "plate"), (float) message.optDouble("window", 0));
                 break;
             case "media":
                 if (!music.isActive()) {
