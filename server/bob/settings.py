@@ -6,6 +6,7 @@ from .config import ROOT
 
 PATH = ROOT / "data" / "devices.json"
 THEMES = ("dark", "light")
+INDICATORS = ("classic", "colorful")
 VOLUME_MIN = 10
 VOLUME_MAX = 100
 VOLUME_STEP = 10
@@ -52,8 +53,15 @@ class DeviceSettings:
         self.set(device, "volume", level)
         return level
 
+    def indicator(self, device: str) -> str:
+        value = self.get(device, "indicator", "classic")
+        return value if value in INDICATORS else "classic"
+
+    def set_indicator(self, device: str, style: str) -> None:
+        self.set(device, "indicator", style if style in INDICATORS else "classic")
+
     def snapshot(self, device: str) -> dict:
-        return {"type": "settings", "voice": self.voice(device), "theme": self.theme(device), "volume": self.volume(device)}
+        return {"type": "settings", "voice": self.voice(device), "theme": self.theme(device), "volume": self.volume(device), "indicator": self.indicator(device)}
 
     def subscribe(self, listener: Callable[[str], None]) -> None:
         self.listeners.append(listener)

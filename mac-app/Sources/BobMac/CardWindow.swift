@@ -15,6 +15,7 @@ final class CardView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let artistLabel = NSTextField(labelWithString: "")
     private let pauseView = NSImageView()
+    private let equalizer = Indicator(frame: NSRect(x: 0, y: 0, width: Look.indicator, height: Look.indicator), colorful: true)
     private var cover = ""
 
     override var isFlipped: Bool { true }
@@ -50,7 +51,8 @@ final class CardView: NSView {
         pauseView.image = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: "Пауза")
         pauseView.frame = NSRect(x: Self.size.width - 12 - 22, y: 27, width: 22, height: 22)
         pauseView.isHidden = true
-        [coverView, titleLabel, artistLabel, pauseView].forEach { addSubview($0) }
+        equalizer.frame = NSRect(x: Self.size.width - 12 - Look.indicator - 2, y: (Self.size.height - Look.indicator) / 2, width: Look.indicator, height: Look.indicator)
+        [coverView, titleLabel, artistLabel, pauseView, equalizer].forEach { addSubview($0) }
     }
 
     required init?(coder: NSCoder) {
@@ -64,9 +66,11 @@ final class CardView: NSView {
         artistLabel.textColor = theme.secondary
         pauseView.contentTintColor = theme.secondary
         pauseView.isHidden = !state.paused
+        equalizer.isHidden = state.paused
+        equalizer.set(state.paused ? .idle : .bars)
         titleLabel.stringValue = state.title
         artistLabel.stringValue = state.artist
-        let width: CGFloat = state.paused ? 190 : 222
+        let width: CGFloat = 190
         titleLabel.frame.size.width = width
         artistLabel.frame.size.width = width
         guard state.cover != cover else { return }

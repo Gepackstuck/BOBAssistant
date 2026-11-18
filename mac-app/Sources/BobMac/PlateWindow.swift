@@ -19,6 +19,10 @@ final class PlateWindow {
         panel.alphaValue = 0
     }
 
+    func setColorful(_ value: Bool) {
+        view.setColorful(value)
+    }
+
     func render(_ state: PlateState) {
         failsafe?.cancel()
         if state.phase == "idle" {

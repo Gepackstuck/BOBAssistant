@@ -2,12 +2,13 @@ import AppKit
 import QuartzCore
 
 final class Indicator: NSView {
-    enum Mode { case bars, spin, breathe }
+    enum Mode { case bars, spin, breathe, idle }
 
     private let glow = CAGradientLayer()
     private let orb = CAGradientLayer()
     private let bars = (0..<5).map { _ in CAGradientLayer() }
-    private let heights: [CGFloat] = [13, 21, 26, 19, 14]
+    private(set) var colorful: Bool
+    private var heights: [CGFloat] { colorful ? [13, 21, 26, 19, 14] : [10, 20, 13, 24, 11] }
     private let rhythm: [[Double]] = [
         [0.45, 1.0, 0.6, 0.9, 0.5, 0.8, 0.45],
         [1.0, 0.5, 0.9, 0.4, 0.85, 0.55, 1.0],
@@ -20,7 +21,8 @@ final class Indicator: NSView {
 
     override var isFlipped: Bool { true }
 
-    override init(frame: NSRect) {
+    init(frame: NSRect, colorful: Bool = false) {
+        self.colorful = colorful
         super.init(frame: frame)
         wantsLayer = true
         layer = CALayer()
@@ -43,10 +45,26 @@ final class Indicator: NSView {
         orb.mask = mask
         layer?.addSublayer(orb)
 
+        bars.forEach { layer?.addSublayer($0) }
+        paint()
+    }
+
+    private func paint() {
         for (index, bar) in bars.enumerated() {
-            bar.colors = [Look.accent[index % 4].cgColor, Look.accent[(index + 1) % 4].cgColor]
-            bar.cornerRadius = 2
-            layer?.addSublayer(bar)
+            bar.colors = colorful ? [Look.accent[index % 4].cgColor, Look.accent[(index + 1) % 4].cgColor] : [Look.barTop.cgColor, Look.barBottom.cgColor]
+            bar.cornerRadius = colorful ? 2 : 1.75
+        }
+    }
+
+    func setColorful(_ value: Bool) {
+        guard value != colorful else { return }
+        colorful = value
+        paint()
+        needsLayout = true
+        let current = mode
+        mode = nil
+        if let current {
+            set(current)
         }
     }
 
@@ -59,8 +77,8 @@ final class Indicator: NSView {
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         glow.position = center
         orb.position = center
-        let width: CGFloat = 4
-        let gap: CGFloat = 2.5
+        let width: CGFloat = colorful ? 4 : 3.5
+        let gap: CGFloat = colorful ? 2.5 : 3
         let total = CGFloat(bars.count) * width + CGFloat(bars.count - 1) * gap
         for (index, bar) in bars.enumerated() {
             let height = heights[index] * Look.indicator / 26
@@ -75,20 +93,32 @@ final class Indicator: NSView {
         for layer in [glow, orb] + bars {
             layer.removeAllAnimations()
         }
-        let showOrb = next != .bars
+        let showOrb = next != .bars && next != .idle
         glow.isHidden = !showOrb
         orb.isHidden = !showOrb
-        bars.forEach { $0.isHidden = showOrb }
+        bars.forEach { $0.isHidden = next != .bars }
         switch next {
         case .bars:
             for (index, bar) in bars.enumerated() {
-                let animation = CAKeyframeAnimation(keyPath: "transform.scale.y")
-                animation.values = rhythm[index]
-                animation.duration = durations[index]
-                animation.calculationMode = .cubic
-                animation.repeatCount = .infinity
-                animation.timeOffset = Double(index) * 0.11
-                bar.add(animation, forKey: "bar")
+                if colorful {
+                    let animation = CAKeyframeAnimation(keyPath: "transform.scale.y")
+                    animation.values = rhythm[index]
+                    animation.duration = durations[index]
+                    animation.calculationMode = .cubic
+                    animation.repeatCount = .infinity
+                    animation.timeOffset = Double(index) * 0.11
+                    bar.add(animation, forKey: "bar")
+                } else {
+                    let animation = CABasicAnimation(keyPath: "transform.scale.y")
+                    animation.fromValue = 1.0
+                    animation.toValue = 0.4
+                    animation.duration = 0.45
+                    animation.autoreverses = true
+                    animation.repeatCount = .infinity
+                    animation.timeOffset = Double(index) * 0.13
+                    animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    bar.add(animation, forKey: "bar")
+                }
             }
         case .spin:
             let spin = CABasicAnimation(keyPath: "transform.rotation.z")
@@ -97,6 +127,8 @@ final class Indicator: NSView {
             spin.duration = 1.4
             spin.repeatCount = .infinity
             orb.add(spin, forKey: "spin")
+        case .idle:
+            break
         case .breathe:
             let pulse = CABasicAnimation(keyPath: "transform.scale")
             pulse.fromValue = 1.0

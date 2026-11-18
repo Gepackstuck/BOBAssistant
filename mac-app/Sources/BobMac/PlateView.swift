@@ -150,6 +150,11 @@ final class PlateView: NSView {
         timerFill.isHidden = !showsTimer
     }
 
+    func setColorful(_ value: Bool) {
+        indicator.setColorful(value)
+        needsLayout = true
+    }
+
     func apply(_ next: PlateState) {
         let previous = state
         state = next

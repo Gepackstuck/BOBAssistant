@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusLine = NSMenuItem(title: "Нет связи с Бобом", action: nil, keyEquivalent: "")
     private let voiceItem = NSMenuItem(title: "Отвечать голосом", action: #selector(toggleVoice), keyEquivalent: "")
     private let themeItem = NSMenuItem(title: "Светлая плашка", action: #selector(toggleTheme), keyEquivalent: "")
+    private let equalizerItem = NSMenuItem(title: "Разноцветный эквалайзер", action: #selector(toggleEqualizer), keyEquivalent: "")
+    private var colorful = false
     private let volumeItem = NSMenuItem(title: "Громкость голоса", action: nil, keyEquivalent: "")
     private var volumeItems: [NSMenuItem] = []
     private var voiceOn = true
@@ -38,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(volumeItem)
         themeItem.target = self
         menu.addItem(themeItem)
+        equalizerItem.target = self
+        menu.addItem(equalizerItem)
         let demo = NSMenuItem(title: "Показать пример плашки", action: #selector(runDemo), keyEquivalent: "")
         demo.target = self
         menu.addItem(demo)
@@ -54,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.card.render(state, theme: Theme.named(self.theme))
         }
-        link.onSettings = { [weak self] voice, theme, volume in self?.apply(voice: voice, theme: theme, volume: volume) }
+        link.onSettings = { [weak self] voice, theme, volume, indicator in self?.apply(voice: voice, theme: theme, volume: volume, indicator: indicator) }
         link.onConnection = { [weak self] connected in
             self?.statusLine.title = connected ? "Подключено к Бобу" : "Нет связи с Бобом"
             if !connected {
@@ -73,7 +77,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return (try? String(contentsOfFile: path, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    private func apply(voice: Bool, theme: String, volume: Int) {
+    private func apply(voice: Bool, theme: String, volume: Int, indicator: String) {
+        colorful = indicator == "colorful"
+        equalizerItem.state = colorful ? .on : .off
+        plate.setColorful(colorful)
         volumeItems.forEach { $0.state = $0.tag == volume ? .on : .off }
         volumeItem.title = "Громкость голоса: \(volume)%"
         voiceOn = voice
@@ -89,6 +96,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func chooseVolume(_ sender: NSMenuItem) {
         link.setVolume(sender.tag)
+    }
+
+    @objc private func toggleEqualizer() {
+        link.setIndicator(colorful ? "classic" : "colorful")
     }
 
     @objc private func toggleTheme() {

@@ -3,7 +3,7 @@ import Foundation
 final class Link {
     var onPlate: ((PlateState) -> Void)?
     var onCard: ((CardState) -> Void)?
-    var onSettings: ((Bool, String, Int) -> Void)?
+    var onSettings: ((Bool, String, Int, String) -> Void)?
     var onConnection: ((Bool) -> Void)?
 
     private let url: URL
@@ -36,6 +36,10 @@ final class Link {
 
     func setVolume(_ percent: Int) {
         send(["type": "set_volume", "percent": percent])
+    }
+
+    func setIndicator(_ style: String) {
+        send(["type": "set_indicator", "style": style])
     }
 
     func setTheme(_ theme: String) {
@@ -98,7 +102,7 @@ final class Link {
                     paused: (object["state"] as? String) == "paused"
                 ))
             case "settings":
-                self.onSettings?(object["voice"] as? Bool ?? true, object["theme"] as? String ?? "dark", (object["volume"] as? NSNumber)?.intValue ?? 100)
+                self.onSettings?(object["voice"] as? Bool ?? true, object["theme"] as? String ?? "dark", (object["volume"] as? NSNumber)?.intValue ?? 100, object["indicator"] as? String ?? "classic")
             default:
                 break
             }

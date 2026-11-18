@@ -119,6 +119,8 @@ class DeviceServer(threading.Thread):
                     self.brain.settings.set_voice(name, bool(request.get("enabled")))
                 elif request.get("type") == "set_theme":
                     self.brain.settings.set_theme(name, str(request.get("theme", "dark")))
+                elif request.get("type") == "set_indicator":
+                    self.brain.settings.set_indicator(name, str(request.get("style", "classic")))
                 elif request.get("type") == "set_volume":
                     self.brain.settings.set_volume(name, int(request.get("percent", 100)))
         finally:

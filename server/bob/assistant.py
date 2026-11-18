@@ -49,6 +49,8 @@ LEVEL_WORDS = {
     "десять": 10, "двадцать": 20, "тридцать": 30, "сорок": 40, "пятьдесят": 50,
     "шестьдесят": 60, "семьдесят": 70, "восемьдесят": 80, "девяносто": 90, "сто": 100,
 }
+EQUALIZER_ON_RE = re.compile(r"(?:включи|верни|сделай|поставь)\s+(?:разноцветн\w+|цветн\w+|красив\w+)\s+(?:эквалайзер|полоск\w+)|(?:эквалайзер|полоск\w+)\s+(?:разноцветн\w+|цветн\w+)", re.IGNORECASE)
+EQUALIZER_OFF_RE = re.compile(r"(?:верни|включи|сделай|поставь)\s+(?:обычн\w+|стандартн\w+|прежн\w+|классическ\w+)\s+(?:эквалайзер|полоск\w+)|(?:обычн\w+|классическ\w+)\s+(?:эквалайзер|полоск\w+)", re.IGNORECASE)
 CLOSING_CORE = {
     "спасибо", "благодарю", "хватит", "достаточно", "довольно", "отбой", "отмена", "стоп", "ничего", "надо",
     "ладно", "понятно", "ясно", "всё", "все", "пока", "свидания", "свободен", "отключись", "замолчи", "помолчи", "забудь",
@@ -120,6 +122,12 @@ class Assistant:
             if current <= VOLUME_MIN:
                 return "Тише уже некуда."
             return self.voice_volume_reply(self.settings.set_volume(device, current - VOLUME_STEP))
+        if EQUALIZER_ON_RE.search(text):
+            self.settings.set_indicator(device, "colorful")
+            return "Хорошо, теперь эквалайзер разноцветный."
+        if EQUALIZER_OFF_RE.search(text):
+            self.settings.set_indicator(device, "classic")
+            return "Хорошо, эквалайзер снова обычный."
         if VOICE_OFF_RE.search(text):
             self.settings.set_voice(device, False)
             return "Хорошо, теперь отвечаю только текстом."
