@@ -53,7 +53,11 @@ final class ServerManager {
         stopping = false
         guard process == nil else { return }
         if !listeners().isEmpty {
-            onStatus?("Сервер уже запущен (не этим приложением)")
+            onStatus?("Порт занят: жду, пока освободится или уже работает свой сервер")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                guard let self, !self.stopping, self.process == nil else { return }
+                self.start()
+            }
             return
         }
         guard let (path, arguments) = executable() else {
