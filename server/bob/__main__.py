@@ -126,7 +126,7 @@ def run_voice(cfg: dict, use_mic: bool) -> None:
     assistant = Assistant(cfg, settings)
     assistant.llm.warm_up()
     whisper = Whisper(cfg["stt"])
-    names = assistant.music.taste_names()
+    names = list(dict.fromkeys([*cfg["stt"].get("names", []), *assistant.music.taste_names()]))
     if names:
         whisper.prompt = f"{whisper.prompt} Исполнители: {', '.join(names)}."
     brain = Brain(cfg, assistant, whisper, load_voice(cfg), settings)
