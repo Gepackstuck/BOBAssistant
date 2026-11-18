@@ -62,7 +62,7 @@ class Device:
     def music(self, payload: dict) -> None:
         return None
 
-    def play(self, chunks: Iterable[np.ndarray], rate: int) -> None:
+    def play(self, chunks: Iterable[np.ndarray], rate: int, monitor=None) -> str | None:
         raise NotImplementedError
 
     @property
@@ -106,8 +106,8 @@ class LocalDevice(Device):
     def chime(self) -> None:
         self.speaker.chime()
 
-    def play(self, chunks: Iterable[np.ndarray], rate: int) -> None:
-        self.speaker.play_stream(chunks, rate)
+    def play(self, chunks: Iterable[np.ndarray], rate: int, monitor=None) -> str | None:
+        return self.speaker.play_stream(chunks, rate, monitor)
 
 
 class RemoteDevice(Device):
@@ -180,7 +180,7 @@ class RemoteDevice(Device):
     def music(self, payload: dict) -> None:
         self._send(json.dumps({"type": "music", **payload}))
 
-    def play(self, chunks: Iterable[np.ndarray], rate: int) -> None:
+    def play(self, chunks: Iterable[np.ndarray], rate: int, monitor=None) -> str | None:
         self.muted.set()
         self.played.clear()
         try:

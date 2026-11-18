@@ -11,7 +11,12 @@ from .models import ensure_file
 from .textnorm import for_speech
 
 SENTENCE_RE = re.compile(r"(?<=[.!?…])\s+")
+CLAUSE_RE = re.compile(r"(?<=[,;:—])\s+")
 MAX_CHARS = 900
+PIECE_CHARS = 110
+SENTENCE_PAUSE = 0.45
+CLAUSE_PAUSE = 0.22
+TAIL_PAUSE = 0.5
 
 
 class SileroTts:
@@ -27,12 +32,24 @@ class SileroTts:
     def voice_for(self, wake_key: str | None) -> dict:
         return self.voices[self.by_wake.get(wake_key or "", self.default_voice)]
 
-    def _chunks(self, text: str) -> list[str]:
-        return [
-            part
-            for part in (s.strip()[:MAX_CHARS] for s in SENTENCE_RE.split(text))
-            if re.search(r"\w", part)
-        ]
+    def _pieces(self, sentence: str) -> list[str]:
+        pieces: list[str] = []
+        for clause in CLAUSE_RE.split(sentence):
+            if pieces and len(pieces[-1]) + len(clause) < PIECE_CHARS and not pieces[-1].endswith((";", ":")):
+                pieces[-1] = f"{pieces[-1]} {clause}"
+            else:
+                pieces.append(clause)
+        return pieces
+
+    def _chunks(self, text: str) -> list[tuple[str, float]]:
+        chunks: list[tuple[str, float]] = []
+        for sentence in (part.strip()[:MAX_CHARS] for part in SENTENCE_RE.split(text)):
+            if not re.search(r"\w", sentence):
+                continue
+            pieces = self._pieces(sentence) if len(sentence) > PIECE_CHARS else [sentence]
+            chunks.extend((piece, CLAUSE_PAUSE) for piece in pieces[:-1])
+            chunks.append((pieces[-1], SENTENCE_PAUSE))
+        return chunks
 
     def _say(self, chunk: str, voice: dict) -> np.ndarray:
         audio = self.model.apply_tts(
@@ -50,7 +67,11 @@ class SileroTts:
 
     def stream(self, text: str, voice: dict | None = None) -> Iterator[np.ndarray]:
         chosen = voice or self.voices[self.default_voice]
-        return (self._say(chunk, chosen) for chunk in self._chunks(for_speech(text)))
+        chunks = self._chunks(for_speech(text))
+        for index, (chunk, pause) in enumerate(chunks):
+            last = index == len(chunks) - 1
+            audio = self._say(chunk if re.search(r"[.!?…,;:]$", chunk) else chunk + ".", chosen)
+            yield np.concatenate([audio, np.zeros(int(self.sample_rate * (TAIL_PAUSE if last else pause)), dtype=np.float32)])
 
     def synth(self, text: str, voice: dict | None = None) -> np.ndarray:
         parts = list(self.stream(text, voice))

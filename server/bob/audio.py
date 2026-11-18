@@ -121,18 +121,37 @@ class Speaker:
                 self.mic.drain()
                 self.mic.muted = False
 
-    def play_stream(self, chunks: Iterable[np.ndarray], sample_rate: int) -> None:
-        if self.mic:
+    def play_stream(self, chunks: Iterable[np.ndarray], sample_rate: int, monitor=None) -> str | None:
+        listening = bool(monitor and self.mic)
+        if self.mic and not listening:
             self.mic.muted = True
         try:
             for samples in chunks:
-                sd.wait()
+                key = self._wait(monitor if listening else None)
+                if key:
+                    return key
                 sd.play(samples, sample_rate, device=self.device)
-            sd.wait()
+            return self._wait(monitor if listening else None)
         finally:
             if self.mic:
                 self.mic.drain()
                 self.mic.muted = False
+
+    def _wait(self, monitor) -> str | None:
+        if monitor is None:
+            sd.wait()
+            return None
+        try:
+            stream = sd.get_stream()
+        except RuntimeError:
+            return None
+        while stream.active:
+            block = self.mic.read(timeout=0.05)
+            key = monitor(block) if block is not None else None
+            if key:
+                sd.stop()
+                return key
+        return None
 
     def chime(self) -> None:
         rate = 48000

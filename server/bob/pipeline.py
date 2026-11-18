@@ -127,15 +127,17 @@ class Listener(threading.Thread):
                     self.log("⚠️ Микрофон отдаёт тишину: нет доступа к микрофону.")
                     silent_blocks = -1
             key = self.wake.feed(block)
-            if key:
+            while key:
                 try:
-                    self.handle(key)
+                    key = self.handle(key)
                 except Exception as error:
                     self.log(f"ошибка: {error}")
+                    key = None
                 finally:
-                    self.hold(False)
-                    if self.visible:
-                        self.show("idle")
+                    if not key:
+                        self.hold(False)
+                        if self.visible:
+                            self.show("idle")
                     self.wake.reset()
         self.log("отключено")
 
@@ -161,42 +163,47 @@ class Listener(threading.Thread):
                 self.show("listening", text)
 
         audio, voiced = capture(self.device, self.vad, self.listen_cfg, preroll, start_timeout, on_block, min_speech, lambda: looks_unfinished(shown["latest"]))
-        return audio, voiced, shown["on"]
+        return audio, voiced, shown["on"], shown["latest"]
 
-    def handle(self, key: str) -> None:
+    def handle(self, key: str) -> str | None:
         if not self.brain.claim(self.device.name):
             self.log(f"«{key}» услышало другое устройство")
             self.device.drain()
-            return
+            return None
         self.log(f"🎙 «{key}», слушаю")
         self.show("listening")
-        audio, voiced, shown = self.listen_live(self.device.take_preroll(), require_wake=True)
+        audio, voiced, confirmed, live_text = self.listen_live(self.device.take_preroll(), require_wake=True)
         watch = Stopwatch()
         heard = self.transcribe(audio) if voiced else ""
         watch.lap("речь→текст")
         if self.log_text:
-            self.log(f"whisper: «{heard}» ({len(audio) / self.device.sample_rate:.1f} с)")
+            self.log(f"whisper: «{heard}» vosk: «{live_text}» ({len(audio) / self.device.sample_rate:.1f} с)")
         verified, command = strip_wake(heard)
-        if self.verify and not verified:
+        if self.verify and not verified and not confirmed:
             self.log(f"ложное срабатывание: «{heard}»" if self.log_text else "ложное срабатывание")
-            return
+            return None
         if not verified:
-            command = remove_wake(heard)
+            command = self.after_wake(heard, live_text) if confirmed else remove_wake(heard)
         self.hold(True)
         if not command:
             self.show("listening")
             if self.voice:
                 self.device.chime()
-            audio, voiced, shown = self.listen_live([])
+            audio, voiced, confirmed, live_text = self.listen_live([])
             watch = Stopwatch()
             command = remove_wake(self.transcribe(audio)) if voiced else ""
             watch.lap("речь→текст")
         if not command:
             self.log("не услышал команду")
-            return
-        self.converse(key, command, watch)
+            return None
+        return self.converse(key, command, watch)
 
-    def converse(self, key: str, command: str, watch: Stopwatch) -> None:
+    def after_wake(self, heard: str, live_text: str) -> str:
+        count = len(live_text.split())
+        words = heard.split()
+        return " ".join(words[-count:]) if 0 < count < len(words) else remove_wake(heard)
+
+    def converse(self, key: str, command: str, watch: Stopwatch) -> str | None:
         brain = self.brain
         device = self.device
         turns = 0
@@ -219,7 +226,11 @@ class Listener(threading.Thread):
                 watch.lap("синтез")
                 self.log(f"⏱ {watch.line()}")
                 if first is not None:
-                    device.play(itertools.chain([first], chunks), brain.tts.sample_rate)
+                    self.wake.reset()
+                    barged = device.play(itertools.chain([first], chunks), brain.tts.sample_rate, self.wake.feed if self.listen_cfg.get("barge_in") else None)
+                    if barged:
+                        self.log("↪ перебил")
+                        return barged
             else:
                 self.log(f"⏱ {watch.line()}")
                 window = max(window, reading_seconds(answer))
@@ -228,7 +239,7 @@ class Listener(threading.Thread):
                 time.sleep(min(reading_seconds(answer), 6.0) if not voice else 1.5)
                 break
             self.show("followup", command, answer, window)
-            audio, voiced, shown = self.listen_live([], start_timeout=window, min_speech=self.listen_cfg["followup_min_speech"])
+            audio, voiced, confirmed, live_text = self.listen_live([], start_timeout=window, min_speech=self.listen_cfg["followup_min_speech"])
             watch = Stopwatch()
             command = remove_wake(self.transcribe(audio)) if voiced else ""
             watch.lap("речь→текст")
