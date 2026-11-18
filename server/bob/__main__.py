@@ -1,4 +1,6 @@
 import argparse
+import itertools
+import sys
 import time
 
 from .config import load_config
@@ -67,10 +69,16 @@ def run_voice(cfg: dict) -> None:
 
     with Mic(audio_cfg["sample_rate"], audio_cfg["input_device"], audio_cfg["preroll_seconds"]) as mic:
         speaker = Speaker(audio_cfg["output_device"], mic)
+        silent_blocks = 0
         while True:
             block = mic.read(timeout=1)
             if block is None:
                 continue
+            if silent_blocks >= 0:
+                silent_blocks = silent_blocks + 1 if not block.any() else -1
+                if silent_blocks == 40:
+                    print("⚠️ Микрофон отдаёт тишину: у терминала нет доступа к микрофону (Настройки → Конфиденциальность → Микрофон).")
+                    silent_blocks = -1
             phrase = wake.feed(block)
             if not phrase:
                 continue
@@ -79,6 +87,7 @@ def run_voice(cfg: dict) -> None:
             watch = Stopwatch()
             heard = whisper.transcribe(audio)
             watch.lap("речь→текст")
+            print(f"   whisper: «{heard}» ({len(audio) / mic.sample_rate:.1f} с)")
             verified, command = strip_wake(heard)
             if not verified:
                 print(f"   ложное срабатывание: «{heard}»")
@@ -88,8 +97,10 @@ def run_voice(cfg: dict) -> None:
                 speaker.chime()
                 audio = capture(mic, vad, cfg["listen"], [])
                 watch = Stopwatch()
-                command = strip_wake(whisper.transcribe(audio))[1]
+                heard = whisper.transcribe(audio)
                 watch.lap("речь→текст")
+                print(f"   whisper после сигнала: «{heard}» ({len(audio) / mic.sample_rate:.1f} с)")
+                command = strip_wake(heard)[1]
             if not command:
                 print("   не услышал команду")
                 wake.reset()
@@ -99,10 +110,12 @@ def run_voice(cfg: dict) -> None:
             watch.lap("модель")
             print(f"Боб: {answer or '(молча)'}")
             if answer:
-                samples = tts.synth(answer)
+                chunks = tts.stream(answer)
+                first = next(chunks, None)
                 watch.lap("синтез")
                 print(f"⏱ {watch.line()}")
-                speaker.play(samples, tts.sample_rate)
+                if first is not None:
+                    speaker.play_stream(itertools.chain([first], chunks), tts.sample_rate)
             else:
                 print(f"⏱ {watch.line()}")
             wake.reset()
@@ -118,6 +131,7 @@ def main() -> None:
     say.add_argument("text")
     sub.add_parser("listen", help="слушать микрофон (по умолчанию)")
     args = parser.parse_args()
+    sys.stdout.reconfigure(line_buffering=True)
     cfg = load_config()
     if args.command == "ask":
         run_ask(cfg, args.text, args.say)

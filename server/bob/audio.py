@@ -1,5 +1,6 @@
 import queue
 from collections import deque
+from typing import Iterable
 
 import numpy as np
 import sounddevice as sd
@@ -63,6 +64,19 @@ class Speaker:
             self.mic.muted = True
         try:
             sd.play(samples, sample_rate, device=self.device)
+            sd.wait()
+        finally:
+            if self.mic:
+                self.mic.drain()
+                self.mic.muted = False
+
+    def play_stream(self, chunks: Iterable[np.ndarray], sample_rate: int) -> None:
+        if self.mic:
+            self.mic.muted = True
+        try:
+            for samples in chunks:
+                sd.wait()
+                sd.play(samples, sample_rate, device=self.device)
             sd.wait()
         finally:
             if self.mic:

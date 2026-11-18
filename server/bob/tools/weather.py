@@ -1,10 +1,12 @@
+import functools
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
 
 URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
-USER_AGENT = "BOBAssistant/0.1 github.com/Gepackstuck/BOBAssistant"
+GEOCODER = "https://nominatim.openstreetmap.org/search"
+USER_AGENT ="BOBAssistant/0.1 github.com/Gepackstuck/BOBAssistant"
 
 SYMBOLS = [
     ("heavysleet", "сильный мокрый снег"),
@@ -65,8 +67,32 @@ def day_summary(series: list[dict], tz: ZoneInfo, day: datetime) -> str | None:
     return f"от {round(min(temps))} до {round(max(temps))} °C, {sky}, {rain}"
 
 
-def report(cfg: dict) -> str:
+@functools.lru_cache(maxsize=128)
+def geocode(city: str) -> dict | None:
+    response = httpx.get(
+        GEOCODER,
+        params={"q": city, "format": "json", "limit": 1, "accept-language": "ru"},
+        headers={"User-Agent": USER_AGENT},
+        timeout=10,
+    )
+    response.raise_for_status()
+    found = response.json()
+    if not found:
+        return None
+    return {
+        "name": found[0]["display_name"].split(",")[0],
+        "latitude": float(found[0]["lat"]),
+        "longitude": float(found[0]["lon"]),
+    }
+
+
+def report(cfg: dict, city: str | None = None) -> str:
     place = cfg["place"]
+    if city:
+        found = geocode(city.strip())
+        if found is None:
+            return f"Город «{city}» не найден"
+        place = {**place, **found}
     if place.get("latitude") is None:
         return "Место не настроено: задайте place.latitude и place.longitude в config.local.yaml"
     tz = ZoneInfo(place["timezone"])
@@ -92,7 +118,11 @@ def report(cfg: dict) -> str:
 def spec(cfg: dict) -> dict:
     return {
         "name": "weather",
-        "description": "Погода сейчас и прогноз на сегодня, завтра и послезавтра в доме пользователя (met.no).",
-        "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-        "run": lambda args: report(cfg),
+        "description": "Погода сейчас и прогноз на сегодня, завтра и послезавтра (met.no). Без города — дома у пользователя.",
+        "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string", "description": "Город, если спрашивают не про дом"}},
+            "additionalProperties": False,
+        },
+        "run": lambda args: report(cfg, args.get("city")),
     }

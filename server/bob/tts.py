@@ -1,4 +1,5 @@
 import re
+from typing import Iterator
 
 import numpy as np
 import torch
@@ -26,15 +27,18 @@ class SileroTts:
             if re.search(r"\w", part)
         ]
 
+    def _say(self, chunk: str) -> np.ndarray:
+        return self.model.apply_tts(
+            text=chunk,
+            speaker=self.speaker,
+            sample_rate=self.sample_rate,
+            put_accent=True,
+            put_yo=True,
+        ).numpy().astype(np.float32)
+
+    def stream(self, text: str) -> Iterator[np.ndarray]:
+        return (self._say(chunk) for chunk in self._chunks(for_speech(text)))
+
     def synth(self, text: str) -> np.ndarray:
-        parts = [
-            self.model.apply_tts(
-                text=chunk,
-                speaker=self.speaker,
-                sample_rate=self.sample_rate,
-                put_accent=True,
-                put_yo=True,
-            ).numpy()
-            for chunk in self._chunks(for_speech(text))
-        ]
-        return np.concatenate(parts).astype(np.float32) if parts else np.zeros(0, dtype=np.float32)
+        parts = list(self.stream(text))
+        return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
