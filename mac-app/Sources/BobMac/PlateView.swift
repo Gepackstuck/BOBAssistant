@@ -23,6 +23,8 @@ final class PlateView: NSView {
 
     override var isFlipped: Bool { true }
 
+    var indicatorFrame: NSRect { indicator.frame }
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -67,12 +69,12 @@ final class PlateView: NSView {
     private var showsTimer: Bool { state.phase == "followup" && state.window > 0 }
 
     private var smallText: String {
-        if listening { return state.request.isEmpty ? "" : "Слушаю" }
+        if listening { return "Слушаю" }
         return state.request
     }
 
     private var bigText: String {
-        if listening { return state.request.isEmpty ? "Слушаю…" : state.request }
+        if listening { return state.request.isEmpty ? "Говорите…" : state.request }
         if thinking { return "Думаю…" }
         return state.answer
     }
@@ -112,7 +114,7 @@ final class PlateView: NSView {
         let big = height(of: bigText, font: Look.bigFont, width: textWidth, lines: Look.bigMaxLines)
         let block = small + (small > 0 && big > 0 ? Look.lineGap : 0) + big
         let row = max(block, Look.indicator)
-        let total = Look.padV * 2 + row + (showsTimer ? Look.timerSpace : 0)
+        let total = Look.padV * 2 + row
         return Measure(small: small, big: big, block: block, total: total)
     }
 
@@ -121,7 +123,9 @@ final class PlateView: NSView {
         let layout = measure(boxWidth: bounds.width)
         let row = max(layout.block, Look.indicator)
         let top = Look.padV
-        indicator.frame = NSRect(x: Look.padH, y: top + (row - Look.indicator) / 2, width: Look.indicator, height: Look.indicator)
+        let lastLine = ceil(Look.bigFont.ascender - Look.bigFont.descender + Look.bigFont.leading)
+        let center = top + row - lastLine / 2
+        indicator.frame = NSRect(x: Look.padH, y: center - Look.indicator / 2, width: Look.indicator, height: Look.indicator)
         let textX = Look.padH + Look.indicator + Look.gap
         let textWidth = bounds.width - textX - Look.padH
         var y = top + (row - layout.block) / 2
@@ -132,7 +136,7 @@ final class PlateView: NSView {
         }
         bigLabel.frame = NSRect(x: textX, y: y, width: textWidth, height: layout.big)
         let trackWidth = bounds.width - Look.padH * 2
-        let trackY = bounds.height - Look.padV / 2 - Look.timerHeight - 2
+        let trackY = bounds.height - Look.timerInset - Look.timerHeight
         timerTrack.frame = CGRect(x: Look.padH, y: trackY, width: trackWidth, height: Look.timerHeight)
         timerFill.bounds = CGRect(x: 0, y: 0, width: trackWidth, height: Look.timerHeight)
         timerFill.position = CGPoint(x: Look.padH, y: trackY + Look.timerHeight / 2)

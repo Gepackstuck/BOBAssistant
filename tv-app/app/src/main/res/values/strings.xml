@@ -5,6 +5,7 @@
     <string name="notification_text">Боб слушает кодовые слова</string>
     <string name="state_listening">Слушаю…</string>
     <string name="caption_listening">Слушаю</string>
+    <string name="state_speak">Говорите…</string>
     <string name="state_thinking">Думаю…</string>
     <string name="state_followup">Можно уточнить…</string>
     <string name="status_connected">Подключено к серверу %1$s</string>

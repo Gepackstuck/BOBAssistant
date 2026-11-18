@@ -91,6 +91,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 let arguments = CommandLine.arguments
+if arguments.count >= 2, arguments[1] == "--layout" {
+    _ = NSApplication.shared
+    let states: [(String, PlateState)] = [
+        ("пусто", PlateState(phase: "listening", request: "", answer: "", voice: true)),
+        ("слово", PlateState(phase: "listening", request: "какая", answer: "", voice: true)),
+        ("фраза", PlateState(phase: "listening", request: "какая погода завтра в Москве", answer: "", voice: true)),
+        ("длинно", PlateState(phase: "listening", request: "какая погода завтра в Москве и в Санкт-Петербурге и ещё в Белгороде и Курске", answer: "", voice: true)),
+        ("думаю", PlateState(phase: "thinking", request: "какая погода завтра в Москве", answer: "", voice: true)),
+        ("ответ", PlateState(phase: "answer", request: "какая погода завтра в Москве", answer: "Завтра в Москве от нуля до пяти градусов, мокрый снег.", voice: true))
+    ]
+    for (name, state) in states {
+        let view = PlateView(frame: .zero)
+        view.apply(state)
+        let size = view.preferredSize()
+        view.setFrameSize(size)
+        view.layout()
+        print("\(name.padding(toLength: 8, withPad: " ", startingAt: 0)) высота \(Int(size.height))  индикатор y=\(Int(view.indicatorFrame.minY)) центр=\(Int(view.indicatorFrame.midY))")
+    }
+    exit(0)
+}
 if arguments.count >= 3, arguments[1] == "--snapshots" {
     let directory = URL(fileURLWithPath: arguments[2])
     try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

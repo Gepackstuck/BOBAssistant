@@ -30,7 +30,7 @@ final class Overlay {
     private final WindowManager windows;
     private final Handler main = new Handler(Looper.getMainLooper());
     private FrameLayout root;
-    private LinearLayout pill;
+    private FrameLayout pill;
     private IndicatorView indicator;
     private TextView small;
     private TextView big;
@@ -72,18 +72,17 @@ final class Overlay {
     }
 
     private void build() {
-        pill = new LinearLayout(context);
-        pill.setOrientation(LinearLayout.VERTICAL);
-        pill.setPadding((int) dp(26), (int) dp(18), (int) dp(26), (int) dp(18));
+        pill = new FrameLayout(context);
         pill.setElevation(dp(18));
 
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setGravity(Gravity.BOTTOM);
+        row.setPadding((int) dp(26), (int) dp(18), (int) dp(26), (int) dp(20));
         indicator = new IndicatorView(context);
         int size = (int) dp(54);
         LinearLayout.LayoutParams indicatorParams = new LinearLayout.LayoutParams(size, size);
-        indicatorParams.setMargins((int) dp(-10), (int) dp(-10), (int) dp(2), (int) dp(-10));
+        indicatorParams.setMargins((int) dp(-10), (int) dp(-10), (int) dp(2), (int) dp(-11));
         row.addView(indicator, indicatorParams);
 
         LinearLayout column = new LinearLayout(context);
@@ -108,8 +107,8 @@ final class Overlay {
         timerFill.setBackground(fillShape);
         timer.addView(timerTrack, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         timer.addView(timerFill, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        LinearLayout.LayoutParams timerParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (int) dp(4));
-        timerParams.topMargin = (int) dp(14);
+        FrameLayout.LayoutParams timerParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, (int) dp(3), Gravity.BOTTOM);
+        timerParams.setMargins((int) dp(26), 0, (int) dp(26), (int) dp(8));
         timer.setVisibility(View.GONE);
         pill.addView(timer, timerParams);
 
@@ -195,13 +194,13 @@ final class Overlay {
         String previousPhase = phase;
         phase = next;
 
-        String smallText = listening ? (request.isEmpty() ? "" : context.getString(R.string.caption_listening)) : request;
+        String smallText = listening ? context.getString(R.string.caption_listening) : request;
         small.setText(smallText);
         small.setVisibility(smallText.isEmpty() ? View.GONE : View.VISIBLE);
 
         if (listening) {
             if (request.isEmpty()) {
-                setBig(context.getString(R.string.state_listening), "", primary);
+                setBig(context.getString(R.string.state_speak), "", primary);
                 big.setTextColor(secondary);
             } else {
                 setBig(request, shownRequest, primary);
