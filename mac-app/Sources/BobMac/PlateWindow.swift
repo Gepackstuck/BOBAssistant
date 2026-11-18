@@ -4,7 +4,7 @@ final class PlateWindow {
     private let panel: NSPanel
     private let view = PlateView(frame: .zero)
     private var visible = false
-    private var hideTask: DispatchWorkItem?
+    private var failsafe: DispatchWorkItem?
 
     init() {
         panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -20,11 +20,14 @@ final class PlateWindow {
     }
 
     func render(_ state: PlateState) {
-        hideTask?.cancel()
+        failsafe?.cancel()
         if state.phase == "idle" {
             hide()
             return
         }
+        let task = DispatchWorkItem { [weak self] in self?.hide() }
+        failsafe = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: task)
         view.apply(state)
         let size = view.preferredSize()
         let frame = target(for: size)
@@ -53,6 +56,7 @@ final class PlateWindow {
     }
 
     private func hide() {
+        failsafe?.cancel()
         guard visible else { return }
         visible = false
         NSAnimationContext.runAnimationGroup({ context in

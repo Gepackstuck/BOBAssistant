@@ -3,6 +3,8 @@ import re
 import mlx_whisper
 import numpy as np
 
+NO_SPEECH_LIMIT = 0.6
+CONFIDENCE_LIMIT = -1.2
 HALLUCINATION_RE = re.compile(
     r"субтитр|DimaTorzok|продолжение следует|спасибо за просмотр|подписывайтесь на канал|редактор субтитров|корректор",
     re.IGNORECASE,
@@ -27,5 +29,9 @@ class Whisper:
             condition_on_previous_text=False,
             no_speech_threshold=0.6,
         )
-        text = result.get("text", "").strip()
+        segments = [
+            segment for segment in result.get("segments", [])
+            if segment.get("no_speech_prob", 0) <= NO_SPEECH_LIMIT and segment.get("avg_logprob", 0) >= CONFIDENCE_LIMIT
+        ]
+        text = " ".join(segment["text"].strip() for segment in segments).strip() if "segments" in result else result.get("text", "").strip()
         return "" if HALLUCINATION_RE.search(text) else text

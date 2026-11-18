@@ -40,6 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         link.onSettings = { [weak self] voice, theme in self?.apply(voice: voice, theme: theme) }
         link.onConnection = { [weak self] connected in
             self?.statusLine.title = connected ? "Подключено к Бобу" : "Нет связи с Бобом"
+            if !connected {
+                self?.plate.render(PlateState(phase: "idle", request: "", answer: "", voice: true))
+            }
         }
         link.start()
     }

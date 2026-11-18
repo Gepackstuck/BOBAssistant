@@ -42,6 +42,7 @@ final class Overlay {
     private String shownRequest = "";
     private String phase = "idle";
     private boolean attached;
+    private final Runnable failsafe = () -> render("idle", "", "", "dark", 0f);
 
     Overlay(Context context) {
         this.context = context;
@@ -172,6 +173,10 @@ final class Overlay {
     }
 
     private void render(String next, String request, String answer, String theme, float window) {
+        main.removeCallbacks(failsafe);
+        if (!"idle".equals(next)) {
+            main.postDelayed(failsafe, 30000);
+        }
         if ("idle".equals(next)) {
             phase = "idle";
             if (attached) {

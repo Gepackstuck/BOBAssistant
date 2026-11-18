@@ -17,12 +17,16 @@ SYSTEM = """Ты {name}, домашний голосовой ассистент.
 - За свежими фактами (новости, курсы, счёт матча, цены) обращайся к web_search и пересказывай коротко, без ссылок. У новостей в начале стоит дата: сверяй её с сегодняшней. Если за нужный день данных нет, так и скажи («свежих данных не нашёл», можно назвать, на какую дату есть).
 - Когда просят запомнить или рассказывают о себе важное, вызови remember. Когда просят забыть — forget.
 - Если подходящего инструмента нет или он не ответил, честно скажи, что не знаешь. Ничего не выдумывай.
-- Не задавай встречных вопросов и не спрашивай «а у вас как?». Уточняй только если просьбу правда нельзя понять.
+- Никогда не заканчивай ответ вопросом, предложением помощи или прощанием («чем ещё помочь», «нужно что-то ещё», «обращайтесь»). Отвечай по сути и замолкай. Уточняй только если просьбу правда нельзя понять.
+- Если просят подробнее, ответь развёрнуто, до шести предложений. Если просят короче, ответь одной короткой фразой.
 Сегодня {today}."""
 
 TIME_RE = re.compile(r"котор\w* (сейчас )?час|сколько (сейчас )?врем|что (сейчас )?по времени|какое (сейчас )?время", re.IGNORECASE)
 FILLER_TAIL_RE = re.compile(
-    r"[\s,.!—-]*(?:а у вас как дела|как у вас дела|как ваши дела|чем (?:ещё |еще )?могу (?:вам )?помочь|что (?:вас )?(?:ещё |еще )?вас интересует|что вас (?:ещё |еще )?интересует|могу ли я (?:ещё |еще )?чем-то помочь|нужна ли (?:вам )?(?:ещё |еще )?помощь)\s*\?*\s*$",
+    r"[\s,.!—-]*(?:а у вас как дела|как у вас дела|как ваши дела|чем (?:ещё |еще )?могу (?:вам )?помочь|что (?:вас )?(?:ещё |еще )?вас интересует|что вас (?:ещё |еще )?интересует|"
+    r"могу ли я (?:ещё |еще )?чем-то помочь|нужна ли (?:вам )?(?:ещё |еще )?помощь|нужно ли (?:вам )?(?:ещё |еще )?что-нибудь|хотите (?:ещё |еще )?что-нибудь|"
+    r"хотите узнать (?:ещё |еще )?больше|есть ли (?:ещё |еще )?вопросы|если (?:что|понадобится|нужно)[^.!?]*|обращайтесь[^.!?]*|я к вашим услугам|"
+    r"всегда (?:рад|готов)[^.!?]*|больше не буду беспокоить[^.!?]*)\s*[?!.]*\s*$",
     re.IGNORECASE,
 )
 REMEMBER_RE = re.compile(r"^\s*запомни(?:те)?[\s,:-]+(?:что\s+)?(.+)$", re.IGNORECASE | re.DOTALL)
@@ -33,7 +37,16 @@ THEME_WORD = r"(?:тем\w+|плашк\w+|оформлени\w+|стил\w+)"
 THEME_LIGHT_RE = re.compile(rf"светл\w+\s+{THEME_WORD}|{THEME_WORD}\s+светл\w+", re.IGNORECASE)
 THEME_DARK_RE = re.compile(rf"[тТ][ёе]мн\w+\s+{THEME_WORD}|{THEME_WORD}\s+[тТ][ёе]мн\w+", re.IGNORECASE)
 THEME_TOGGLE_RE = re.compile(rf"(?:смени|поменяй|переключи)\s+{THEME_WORD}", re.IGNORECASE)
-CANCEL_RE = re.compile(r"^(стоп|отмена|ничего|не надо|забудь|отбой)\b", re.IGNORECASE)
+CLOSING_CORE = {
+    "спасибо", "благодарю", "хватит", "достаточно", "довольно", "отбой", "отмена", "стоп", "ничего", "надо",
+    "ладно", "понятно", "ясно", "всё", "все", "пока", "свидания", "свободен", "отключись", "замолчи", "помолчи", "забудь",
+}
+CLOSING_FILLER = {
+    "нет", "не", "большое", "это", "на", "этом", "до", "ну", "да", "ага", "угу", "хорошо", "окей", "ок", "всего", "доброго",
+    "спокойной", "ночи", "боб", "миньон", "подручный", "сбер", "тебе", "вам", "очень",
+}
+WORD_RE = re.compile(r"[а-яёa-z]+", re.IGNORECASE)
+SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+")
 
 
 class Assistant:
@@ -85,7 +98,7 @@ class Assistant:
         if forgotten:
             removed = self.memory.forget(forgotten.group(1).strip(" .!?"))
             return "Забыл." if not removed.endswith(": 0") else "Такого не помню."
-        if CANCEL_RE.search(text.strip()):
+        if self.is_end(text):
             return ""
         if TIME_RE.search(text):
             return f"Сейчас {now(self.cfg):%H:%M}."
@@ -100,5 +113,16 @@ class Assistant:
             self.session = self.llm.new_session()
         answer = self.llm.reply(self.session, self.system_prompt(), text, self.registry)
         self.last_turn = time.monotonic()
-        trimmed = FILLER_TAIL_RE.sub("", answer).strip()
-        return trimmed or answer or "Не получилось ответить."
+        return self.tidy(answer) or "Не получилось ответить."
+
+    def is_end(self, text: str) -> bool:
+        first = SENTENCE_SPLIT_RE.split(text.strip())[0]
+        words = [word.lower() for word in WORD_RE.findall(first)]
+        return bool(words) and len(words) <= 8 and all(word in CLOSING_CORE or word in CLOSING_FILLER for word in words) and any(word in CLOSING_CORE for word in words)
+
+    def tidy(self, answer: str) -> str:
+        trimmed = FILLER_TAIL_RE.sub("", answer).strip() or answer
+        sentences = SENTENCE_SPLIT_RE.split(trimmed)
+        if len(sentences) > 1 and sentences[-1].rstrip().endswith("?"):
+            trimmed = " ".join(sentences[:-1]).strip()
+        return trimmed

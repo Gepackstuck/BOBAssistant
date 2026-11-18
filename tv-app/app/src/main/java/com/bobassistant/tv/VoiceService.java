@@ -271,6 +271,9 @@ public final class VoiceService extends Service implements Link.Callback {
     public void onConnected(boolean state) {
         connected = state;
         Log.i(TAG, state ? "connected" : "disconnected");
+        if (!state) {
+            overlay.show("idle", "", "", true, "dark", 0f);
+        }
     }
 
     @Override

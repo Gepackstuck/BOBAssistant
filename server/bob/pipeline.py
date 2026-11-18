@@ -109,7 +109,7 @@ class Listener(threading.Thread):
                     self.wake.reset()
         self.log("отключено")
 
-    def listen_live(self, preroll, start_timeout=None, require_wake=False):
+    def listen_live(self, preroll, start_timeout=None, require_wake=False, min_speech=0.0):
         live = self.wake.live()
         shown = {"on": False, "text": None, "at": 0.0}
 
@@ -129,7 +129,7 @@ class Listener(threading.Thread):
                 shown["text"], shown["at"] = text, now
                 self.show("listening", text)
 
-        audio, voiced = capture(self.device, self.vad, self.listen_cfg, preroll, start_timeout, on_block)
+        audio, voiced = capture(self.device, self.vad, self.listen_cfg, preroll, start_timeout, on_block, min_speech)
         return audio, voiced, shown["on"]
 
     def handle(self, key: str) -> None:
@@ -167,6 +167,8 @@ class Listener(threading.Thread):
     def converse(self, key: str, command: str, watch: Stopwatch) -> None:
         brain = self.brain
         device = self.device
+        turns = 0
+        started = time.monotonic()
         while command:
             self.log(f"Вы: {command}")
             self.show("thinking", command)
@@ -189,8 +191,12 @@ class Listener(threading.Thread):
             else:
                 self.log(f"⏱ {watch.line()}")
                 window = max(window, reading_seconds(answer))
+            turns += 1
+            if turns > self.listen_cfg["max_followups"] or time.monotonic() - started > self.listen_cfg["conversation_seconds"]:
+                time.sleep(min(reading_seconds(answer), 6.0) if not voice else 1.5)
+                break
             self.show("followup", command, answer, window)
-            audio, voiced, shown = self.listen_live([], start_timeout=window)
+            audio, voiced, shown = self.listen_live([], start_timeout=window, min_speech=self.listen_cfg["followup_min_speech"])
             watch = Stopwatch()
             command = remove_wake(brain.transcribe(audio)) if voiced else ""
             watch.lap("речь→текст")
