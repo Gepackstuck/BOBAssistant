@@ -75,11 +75,15 @@ final class Overlay {
     private void build() {
         pill = new FrameLayout(context);
         pill.setElevation(dp(18));
+        pill.setClipToPadding(false);
+        pill.setClipChildren(false);
 
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.BOTTOM);
         row.setPadding((int) dp(26), (int) dp(18), (int) dp(26), (int) dp(20));
+        row.setClipToPadding(false);
+        row.setClipChildren(false);
         indicator = new IndicatorView(context);
         int size = (int) dp(54);
         LinearLayout.LayoutParams indicatorParams = new LinearLayout.LayoutParams(size, size);
