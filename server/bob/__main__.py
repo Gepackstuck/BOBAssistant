@@ -19,7 +19,8 @@ def pick_voice(tts, cfg: dict, name: str | None, speaker: str | None, speed: flo
 
 def run_ask(cfg: dict, text: str, speak: bool, voice_name: str | None = None) -> None:
     from .assistant import Assistant
-    assistant = Assistant(cfg)
+    from .settings import DeviceSettings
+    assistant = Assistant(cfg, DeviceSettings())
     watch = Stopwatch()
     answer = assistant.handle(text)
     watch.lap("модель")
@@ -39,6 +40,16 @@ def run_say(cfg: dict, text: str, voice_name: str | None, speaker: str | None, s
     tts = load_voice(cfg)
     voice = pick_voice(tts, cfg, voice_name, speaker, speed)
     Speaker(cfg["audio"]["output_device"]).play(tts.synth(text, voice), tts.sample_rate)
+
+
+def run_demo(cfg: dict, device: str, voice: bool, scale: float) -> None:
+    import json
+    from websockets.sync.client import connect
+    from .net import device_token
+    with connect(f"ws://127.0.0.1:{cfg['network']['port']}") as ws:
+        ws.send(json.dumps({"type": "hello", "role": "control", "token": device_token(cfg)}))
+        ws.send(json.dumps({"type": "demo", "device": device, "voice": voice, "scale": scale}))
+        print(json.loads(ws.recv(timeout=300))["result"])
 
 
 def run_announce(cfg: dict, device: str, text: str, voice: str | None) -> None:
@@ -67,23 +78,29 @@ def run_levels(cfg: dict) -> None:
 def run_voice(cfg: dict, use_mic: bool) -> None:
     from .assistant import Assistant
     from .audio import Mic, Speaker
-    from .devices import LocalDevice
+    from .devices import Displays, LocalDevice
     from .net import DeviceServer
     from .pipeline import Brain, Listener
+    from .settings import DeviceSettings
     from .stt import Whisper
 
     audio_cfg = cfg["audio"]
     started = time.perf_counter()
     print("Загружаю модели…")
-    assistant = Assistant(cfg)
+    settings = DeviceSettings()
+    assistant = Assistant(cfg, settings)
     assistant.llm.warm_up()
-    brain = Brain(cfg, assistant, Whisper(cfg["stt"]), load_voice(cfg))
-    DeviceServer(cfg, brain).start()
+    brain = Brain(cfg, assistant, Whisper(cfg["stt"]), load_voice(cfg), settings)
+    displays = Displays()
+    server = DeviceServer(cfg, brain, displays)
+    server.start()
     print(f"Готово за {time.perf_counter() - started:.1f} с. Скажите «Боб», «Миньон», «Подручный» или «Окей, Сбер».")
     if not use_mic:
         threading.Event().wait()
     with Mic(audio_cfg["sample_rate"], audio_cfg["input_device"], audio_cfg["preroll_seconds"]) as mic:
-        listener = Listener(LocalDevice("mac", mic, Speaker(audio_cfg["output_device"], mic)), brain)
+        local = LocalDevice("mac", mic, Speaker(audio_cfg["output_device"], mic), displays)
+        server.devices["mac"] = local
+        listener = Listener(local, brain)
         listener.start()
         listener.join()
 
@@ -104,6 +121,10 @@ def main() -> None:
     announce.add_argument("device")
     announce.add_argument("text")
     announce.add_argument("--voice", help="профиль голоса из config.yaml (alisa, minion)")
+    demo = sub.add_parser("plate-demo", help="показать на устройстве плашку без звука")
+    demo.add_argument("device")
+    demo.add_argument("--no-voice", action="store_true", help="показать вариант «только текст»")
+    demo.add_argument("--slow", type=float, default=1.0, help="во сколько раз замедлить, например 3")
     sub.add_parser("levels", help="уровень звука с подключённых устройств, 10 секунд")
     listen = sub.add_parser("listen", help="слушать микрофон Мака и устройства (по умолчанию)")
     listen.add_argument("--no-mic", action="store_true", help="не слушать микрофон Мака, только устройства")
@@ -112,6 +133,8 @@ def main() -> None:
     cfg = load_config()
     if args.command == "ask":
         run_ask(cfg, args.text, args.say, args.voice)
+    elif args.command == "plate-demo":
+        run_demo(cfg, args.device, not args.no_voice, args.slow)
     elif args.command == "levels":
         run_levels(cfg)
     elif args.command == "announce":

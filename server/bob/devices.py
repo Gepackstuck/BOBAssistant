@@ -9,6 +9,33 @@ import numpy as np
 from .audio import BLOCK, Mic, Speaker
 
 
+class Displays:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.connections: dict[str, set] = {}
+
+    def add(self, name: str, connection) -> None:
+        with self.lock:
+            self.connections.setdefault(name, set()).add(connection)
+
+    def remove(self, name: str, connection) -> None:
+        with self.lock:
+            self.connections.get(name, set()).discard(connection)
+
+    def publish(self, name: str, payload: dict) -> None:
+        with self.lock:
+            targets = list(self.connections.get(name, ()))
+        for connection in targets:
+            try:
+                connection.send(json.dumps(payload, ensure_ascii=False))
+            except Exception:
+                pass
+
+
+def plate_payload(phase: str, request: str, answer: str, voice: bool) -> dict:
+    return {"type": "plate", "phase": phase, "request": request, "answer": answer, "voice": voice}
+
+
 class Device:
     name = "device"
     sample_rate = 16000
@@ -22,7 +49,10 @@ class Device:
     def drain(self) -> None:
         raise NotImplementedError
 
-    def show(self, state: str, text: str = "") -> None:
+    def plate(self, phase: str, request: str = "", answer: str = "", voice: bool = True) -> None:
+        return None
+
+    def media(self, hold: bool) -> None:
         return None
 
     def chime(self) -> None:
@@ -37,10 +67,11 @@ class Device:
 
 
 class LocalDevice(Device):
-    def __init__(self, name: str, mic: Mic, speaker: Speaker):
+    def __init__(self, name: str, mic: Mic, speaker: Speaker, displays: Displays):
         self.name = name
         self.mic = mic
         self.speaker = speaker
+        self.displays = displays
         self.sample_rate = mic.sample_rate
 
     def read(self, timeout: float | None = None) -> np.ndarray | None:
@@ -51,6 +82,9 @@ class LocalDevice(Device):
 
     def drain(self) -> None:
         self.mic.drain()
+
+    def plate(self, phase: str, request: str = "", answer: str = "", voice: bool = True) -> None:
+        self.displays.publish(self.name, plate_payload(phase, request, answer, voice))
 
     def chime(self) -> None:
         self.speaker.chime()
@@ -70,6 +104,7 @@ class RemoteDevice(Device):
         self.muted = threading.Event()
         self.closed = threading.Event()
         self.send_lock = threading.Lock()
+        self.played = threading.Event()
         self.peak = 0
         self.rms = 0.0
 
@@ -115,14 +150,18 @@ class RemoteDevice(Device):
         except Exception:
             self.closed.set()
 
-    def show(self, state: str, text: str = "") -> None:
-        self._send(json.dumps({"type": "state", "state": state, "text": text}, ensure_ascii=False))
+    def plate(self, phase: str, request: str = "", answer: str = "", voice: bool = True) -> None:
+        self._send(json.dumps(plate_payload(phase, request, answer, voice), ensure_ascii=False))
+
+    def media(self, hold: bool) -> None:
+        self._send(json.dumps({"type": "media", "hold": hold}))
 
     def chime(self) -> None:
         self._send(json.dumps({"type": "chime"}))
 
     def play(self, chunks: Iterable[np.ndarray], rate: int) -> None:
         self.muted.set()
+        self.played.clear()
         try:
             self._send(json.dumps({"type": "audio_start", "rate": rate}))
             for chunk in chunks:
@@ -130,17 +169,13 @@ class RemoteDevice(Device):
                 for i in range(0, len(pcm), 32768):
                     self._send(pcm[i:i + 32768])
             self._send(json.dumps({"type": "audio_end"}))
-            self._wait_played()
+            self.played.wait(timeout=60)
         finally:
             self.drain()
             self.muted.clear()
 
-    def _wait_played(self) -> None:
-        self.played = threading.Event()
-        self.played.wait(timeout=60)
-
     def on_text(self, message: dict) -> None:
-        if message.get("type") == "played" and getattr(self, "played", None):
+        if message.get("type") == "played":
             self.played.set()
 
     @property

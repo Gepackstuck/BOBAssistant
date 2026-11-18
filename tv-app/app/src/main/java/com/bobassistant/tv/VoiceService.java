@@ -243,16 +243,19 @@ public final class VoiceService extends Service implements Link.Callback {
     public void onMessage(JSONObject message) {
         String type = message.optString("type");
         switch (type) {
-            case "state":
-                String state = message.optString("state");
-                if ("listening".equals(state)) {
+            case "plate":
+                String phase = message.optString("phase");
+                if ("listening".equals(phase) || "thinking".equals(phase) || "answer".equals(phase)) {
                     wakeScreen();
-                    media.hold();
                 }
-                if ("idle".equals(state)) {
+                overlay.show(phase, message.optString("request"), message.optString("answer"), message.optBoolean("voice", true));
+                break;
+            case "media":
+                if (message.optBoolean("hold")) {
+                    media.hold();
+                } else {
                     media.release();
                 }
-                overlay.show(state, message.optString("text"));
                 break;
             case "chime":
                 Player.chime();

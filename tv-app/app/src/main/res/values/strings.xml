@@ -4,6 +4,7 @@
     <string name="channel_name">Голосовой ассистент</string>
     <string name="notification_text">Боб слушает кодовые слова</string>
     <string name="state_listening">Слушаю…</string>
+    <string name="state_thinking">Думаю…</string>
     <string name="state_followup">Можно уточнить…</string>
     <string name="status_connected">Подключено к серверу %1$s</string>
     <string name="status_disconnected">Нет связи с сервером %1$s</string>

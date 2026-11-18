@@ -2,14 +2,17 @@ import json
 import os
 import secrets
 import threading
+import time
 
 from websockets.sync.server import serve
 
 from .config import ROOT
-from .devices import RemoteDevice
+from .devices import Device, Displays, RemoteDevice, plate_payload
 from .pipeline import Brain, Listener
 
 TOKEN_FILE = ROOT / "secrets" / "token"
+DEMO_REQUEST = "какая погода завтра в Москве"
+DEMO_ANSWER = "Завтра в Москве от нуля до пяти градусов, мокрый снег."
 
 
 def device_token(cfg: dict) -> str:
@@ -24,12 +27,25 @@ def device_token(cfg: dict) -> str:
 
 
 class DeviceServer(threading.Thread):
-    def __init__(self, cfg: dict, brain: Brain):
+    def __init__(self, cfg: dict, brain: Brain, displays: Displays):
         super().__init__(daemon=True, name="device-server")
         self.cfg = cfg
         self.brain = brain
+        self.displays = displays
         self.token = device_token(cfg)
-        self.devices: dict[str, RemoteDevice] = {}
+        self.devices: dict[str, Device] = {}
+        brain.settings.subscribe(self.push_settings)
+
+    def push_settings(self, name: str, voice: bool) -> None:
+        self.displays.publish(name, {"type": "settings", "voice": voice})
+
+    def sender(self, name: str):
+        device = self.devices.get(name)
+        if device is not None:
+            return device.plate
+        return lambda phase, request="", answer="", voice=True: self.displays.publish(
+            name, plate_payload(phase, request, answer, voice)
+        )
 
     def announce(self, name: str, text: str, voice: str | None) -> str:
         device = self.devices.get(name)
@@ -37,20 +53,57 @@ class DeviceServer(threading.Thread):
             return f"устройство {name} не подключено"
         tts = self.brain.tts
         profile = tts.voices.get(voice or "", tts.voices[tts.default_voice])
-        device.show("answer", text)
+        device.plate("answer", "", text, True)
         device.play(tts.stream(text, profile), tts.sample_rate)
-        device.show("idle")
+        device.plate("idle")
+        return "ok"
+
+    def demo(self, name: str, voice: bool, scale: float = 1.0) -> str:
+        send = self.sender(name)
+        words = DEMO_REQUEST.split()
+        send("listening", "", "", voice)
+        time.sleep(0.9 * scale)
+        for index in range(1, len(words) + 1):
+            send("listening", " ".join(words[:index]), "", voice)
+            time.sleep(0.4 * scale)
+        send("thinking", DEMO_REQUEST, "", voice)
+        time.sleep(1.3 * scale)
+        send("answer", DEMO_REQUEST, DEMO_ANSWER, voice)
+        time.sleep(4.5 * scale)
+        send("followup", DEMO_REQUEST, DEMO_ANSWER, voice)
+        time.sleep(3.5 * scale)
+        send("idle", "", "", voice)
         return "ok"
 
     def control(self, connection) -> None:
         for message in connection:
             request = json.loads(message)
-            if request.get("type") == "levels":
-                levels = {name: {"peak": d.peak, "rms": round(d.rms, 1), "alive": d.alive} for name, d in self.devices.items()}
-                connection.send(json.dumps({"type": "result", "result": levels}))
-            if request.get("type") == "announce":
-                result = self.announce(str(request.get("device", "tv")), str(request.get("text", "")), request.get("voice"))
-                connection.send(json.dumps({"type": "result", "result": result}, ensure_ascii=False))
+            kind = request.get("type")
+            name = str(request.get("device", "tv"))
+            if kind == "levels":
+                levels = {
+                    key: {"peak": getattr(d, "peak", 0), "rms": round(getattr(d, "rms", 0.0), 1), "alive": d.alive}
+                    for key, d in self.devices.items()
+                }
+                result = levels
+            elif kind == "announce":
+                result = self.announce(name, str(request.get("text", "")), request.get("voice"))
+            elif kind == "demo":
+                result = self.demo(name, bool(request.get("voice", True)), float(request.get("scale", 1.0)))
+            else:
+                continue
+            connection.send(json.dumps({"type": "result", "result": result}, ensure_ascii=False))
+
+    def display(self, connection, name: str) -> None:
+        self.displays.add(name, connection)
+        try:
+            connection.send(json.dumps({"type": "settings", "voice": self.brain.settings.voice(name)}))
+            for message in connection:
+                request = json.loads(message)
+                if request.get("type") == "set_voice":
+                    self.brain.settings.set_voice(name, bool(request.get("enabled")))
+        finally:
+            self.displays.remove(name, connection)
 
     def handle(self, connection) -> None:
         try:
@@ -60,10 +113,14 @@ class DeviceServer(threading.Thread):
         if hello.get("type") != "hello" or not secrets.compare_digest(str(hello.get("token", "")), self.token):
             connection.close(code=4401, reason="bad token")
             return
-        if hello.get("role") == "control":
+        role = hello.get("role")
+        if role == "control":
             self.control(connection)
             return
         name = str(hello.get("device") or "tv")[:32]
+        if role == "display":
+            self.display(connection, name)
+            return
         device = RemoteDevice(name, connection, self.cfg["audio"]["preroll_seconds"], int(hello.get("rate", 16000)))
         self.devices[name] = device
         print(f"[{name}] подключено", flush=True)

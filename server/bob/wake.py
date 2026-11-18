@@ -55,6 +55,9 @@ class VoskWake:
     def reset(self) -> None:
         self.recognizer = KaldiRecognizer(self.model, self.sample_rate, self.grammar)
 
+    def live(self) -> "LiveSpeech":
+        return LiveSpeech(self.model, self.sample_rate)
+
     def _match(self, text: str) -> str | None:
         words = text.split()
         return next(
@@ -76,6 +79,23 @@ class VoskWake:
         if found:
             self.reset()
         return found
+
+
+class LiveSpeech:
+    def __init__(self, model, sample_rate: int):
+        self.recognizer = KaldiRecognizer(model, sample_rate)
+        self.finished: list[str] = []
+        self.partial = ""
+
+    def feed(self, block: np.ndarray) -> str:
+        if self.recognizer.AcceptWaveform(block.tobytes()):
+            text = json.loads(self.recognizer.Result()).get("text", "")
+            if text:
+                self.finished.append(text)
+            self.partial = ""
+        else:
+            self.partial = json.loads(self.recognizer.PartialResult()).get("partial", "")
+        return " ".join([*self.finished, self.partial]).strip()
 
 
 def make_wake(cfg: dict, sample_rate: int):

@@ -3,6 +3,7 @@ import time
 
 from .llm import make_llm
 from .memory import Memory
+from .settings import DeviceSettings
 from .tools import build_registry
 from .tools.clock import describe, now
 
@@ -25,12 +26,15 @@ FILLER_TAIL_RE = re.compile(
 )
 REMEMBER_RE = re.compile(r"^\s*запомни(?:те)?[\s,:-]+(?:что\s+)?(.+)$", re.IGNORECASE | re.DOTALL)
 FORGET_RE = re.compile(r"^\s*забудь(?:те)?[\s,:-]+(?:про\s+|что\s+|о\s+)?(.+)$", re.IGNORECASE | re.DOTALL)
+VOICE_OFF_RE = re.compile(r"(?:выключи|отключи|убери)\s+голос|отвечай\s+(?:только\s+)?(?:текстом|письменно|без\s+голоса)|не\s+отвечай\s+голосом|без\s+голоса", re.IGNORECASE)
+VOICE_ON_RE = re.compile(r"(?:включи|верни)\s+голос|отвечай\s+голосом|говори\s+голосом", re.IGNORECASE)
 CANCEL_RE = re.compile(r"^(стоп|отмена|ничего|не надо|забудь|отбой)\b", re.IGNORECASE)
 
 
 class Assistant:
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict, settings: DeviceSettings):
         self.cfg = cfg
+        self.settings = settings
         self.memory = Memory()
         self.registry = build_registry(cfg, self.memory)
         self.llm = make_llm(cfg["llm"])
@@ -46,7 +50,13 @@ class Assistant:
             prompt += "\nЧто ты знаешь о пользователе и семье:\n" + "\n".join(f"- {fact}" for fact in facts)
         return prompt
 
-    def fast_path(self, text: str) -> str | None:
+    def fast_path(self, text: str, device: str) -> str | None:
+        if VOICE_OFF_RE.search(text):
+            self.settings.set_voice(device, False)
+            return "Хорошо, теперь отвечаю только текстом."
+        if VOICE_ON_RE.search(text):
+            self.settings.set_voice(device, True)
+            return "Снова отвечаю голосом."
         remembered = REMEMBER_RE.match(text)
         if remembered:
             fact = remembered.group(1).strip(" .!?")
@@ -62,8 +72,8 @@ class Assistant:
             return f"Сейчас {now(self.cfg):%H:%M}."
         return None
 
-    def handle(self, text: str) -> str:
-        quick = self.fast_path(text)
+    def handle(self, text: str, device: str = "mac") -> str:
+        quick = self.fast_path(text, device)
         if quick is not None:
             return quick
         if time.monotonic() - self.last_turn > self.session_seconds:
