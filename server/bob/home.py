@@ -67,8 +67,13 @@ class Home:
         with self.lock:
             self.cache = (0.0, [])
 
-    def find(self, name: str, domains: tuple[str, ...]) -> dict:
+    def alias_target(self, name: str) -> str | None:
+        aliases = (self.settings() or {}).get("aliases", {})
         wanted = tokens(name)
+        return next((target for alias, target in aliases.items() if tokens(alias) == wanted), None)
+
+    def find(self, name: str, domains: tuple[str, ...]) -> dict:
+        wanted = tokens(self.alias_target(name) or name)
         scored = []
         for entity in self.entities():
             if entity["entity_id"].split(".")[0] not in domains:
@@ -166,8 +171,11 @@ class Home:
     def overview(self) -> str:
         lights = [entity for entity in self.entities() if entity["entity_id"].startswith("light.")]
         name = lambda entity: entity.get("attributes", {}).get("friendly_name", entity["entity_id"])
-        on = [name(entity) for entity in lights if entity["state"] == "on"]
-        off = [name(entity) for entity in lights if entity["state"] == "off"]
+        states = {name(entity): entity["state"] for entity in lights}
+        merged = {child for parent, children in (self.settings() or {}).get("groups", {}).items() for child in children if states.get(child) == states.get(parent)}
+        shown = [entity for entity in lights if name(entity) not in merged]
+        on = [name(entity) for entity in shown if entity["state"] == "on"]
+        off = [name(entity) for entity in shown if entity["state"] == "off"]
         gone = [name(entity) for entity in lights if entity["state"] == "unavailable"]
         parts = [f"Включено: {' и '.join(on)}." if on else "Весь свет выключен."]
         if off and on:
