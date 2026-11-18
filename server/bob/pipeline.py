@@ -153,7 +153,8 @@ class Listener(threading.Thread):
         self.hold(True)
         if not command:
             self.show("listening")
-            self.device.chime()
+            if self.voice:
+                self.device.chime()
             audio, voiced, shown = self.listen_live([])
             watch = Stopwatch()
             command = remove_wake(self.brain.transcribe(audio)) if voiced else ""
