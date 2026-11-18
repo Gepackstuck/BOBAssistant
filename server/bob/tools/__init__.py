@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from . import calc, clock, search, weather
+from . import calc, clock, search, weather, wiki
 
 
 @dataclass(frozen=True)
@@ -41,6 +41,7 @@ def build_registry(cfg: dict, memory, music) -> Registry:
         Tool(**weather.spec(cfg)),
         Tool(**calc.spec()),
         Tool(**search.spec()),
+        Tool(**wiki.spec()),
         *[Tool(**spec) for spec in memory_specs(memory)],
         *[Tool(**spec) for spec in music_specs(music)],
     ])
