@@ -1,0 +1,55 @@
+import re
+from dataclasses import dataclass, field
+
+HELP_RE = re.compile(
+    r"^\s*(?:что\s+(?:ты\s+)?(?:умеешь|можешь)|чем\s+(?:ты\s+)?(?:можешь\s+)?(?:помочь|быть\s+полезен)|справка|помощь|что\s+тебе\s+можно\s+(?:сказать|говорить))\b(?P<rest>.*)$",
+    re.IGNORECASE,
+)
+EVERYWHERE = ("mac", "tv")
+
+
+@dataclass
+class Group:
+    key: str
+    title: str
+    does: str
+    examples: list[str]
+    words: str
+    devices: tuple[str, ...] = EVERYWHERE
+    available: bool = True
+    extra: dict = field(default_factory=dict)
+
+
+def groups(assistant) -> list[Group]:
+    return [
+        Group("music", "музыка", "включать исполнителя, песню, альбом или Мою волну, ставить на паузу, переключать, менять громкость и ставить лайк",
+              ["включи Whole Lotta Swag", "что-нибудь спокойное", "пауза", "следующая", "что играет"], r"музык|песн|трек|играть|плейлист",
+              available=assistant.music.connected()),
+        Group("facts", "справки", "рассказывать, кто такой человек, что за место или понятие, и сколько лет",
+              ["кто такой Оксимирон", "сколько лет Лолите Милявской", "что такое Wi-Fi шесть"], r"справк|факт|энциклопед|знани|вопрос|человек"),
+        Group("weather", "погода и время", "говорить погоду в любом городе, время и дату",
+              ["какая погода завтра в Москве", "который час"], r"погод|врем|час|дат"),
+        Group("news", "новости и курсы", "искать свежие новости, курсы валют и цены в интернете",
+              ["какой сегодня курс доллара", "что нового в мире"], r"новост|курс|цен|интернет|поиск"),
+        Group("calc", "расчёты", "считать выражения", ["сколько будет двадцать три умножить на семнадцать"], r"счит|расчёт|посчит|калькулятор|математик"),
+        Group("memory", "память", "запоминать факты о вас и семье и забывать их по просьбе",
+              ["запомни, что собаку зовут Бен", "что ты обо мне знаешь", "забудь про собаку"], r"памят|запомн|забыв|забыт"),
+        Group("settings", "настройки", "менять громкость голоса, отвечать только текстом и переключать тему плашки",
+              ["говори тише", "громкость голоса пятьдесят процентов", "отвечай только текстом", "светлая плашка"], r"настройк|громкост|голос|тем[ауы]|плашк"),
+    ]
+
+
+def visible(assistant, device: str) -> list[Group]:
+    kind = "tv" if device.startswith("tv") else "mac"
+    return [group for group in groups(assistant) if group.available and kind in group.devices]
+
+
+def help_text(assistant, device: str, rest: str) -> str | None:
+    found = visible(assistant, device)
+    topic = next((group for group in found if rest.strip() and re.search(group.words, rest, re.IGNORECASE)), None)
+    if topic:
+        examples = "; ".join(f"«{example}»" for example in topic.examples)
+        return f"В разделе «{topic.title}» я умею {topic.does}.|||Например: {examples}."
+    titles = ", ".join(group.title for group in found)
+    ideas = "; ".join(f"«{group.examples[0]}»" for group in found[:5])
+    return f"Я умею: {titles}. Спроси, что я умею с музыкой или погодой, и расскажу подробнее.|||Например: {ideas}."

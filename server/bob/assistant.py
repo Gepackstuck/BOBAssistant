@@ -3,6 +3,7 @@ import time
 
 from num2words import num2words
 
+from .capabilities import HELP_RE, help_text
 from .llm import make_llm
 from .memory import Memory
 from .music import Music, current_device
@@ -100,6 +101,9 @@ class Assistant:
             light = self.settings.theme(device) == "dark"
             self.settings.set_theme(device, "light" if light else "dark")
             return "Хорошо, светлая плашка." if light else "Хорошо, тёмная плашка."
+        asked = HELP_RE.match(text)
+        if asked:
+            return help_text(self, device, asked.group("rest"))
         level = VOICE_LEVEL_RE.search(text)
         if level:
             token = level.group(1).strip(" .%").lower()
