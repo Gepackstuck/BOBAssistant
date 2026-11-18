@@ -55,10 +55,13 @@ def run_music(cfg: dict, query: str, kind: str) -> None:
     import httpx
     from .music import Music
     music = Music(cfg)
-    items, name = music.resolve(query, kind)
-    print(f"Найдено: {name}, треков в очереди: {len(items)}")
+    resolved = music.resolve(query, kind)
+    items = resolved.items
+    print(f"Найдено: {resolved.name}, треков в очереди: {len(items)}")
     for index, item in enumerate(items[:5], 1):
         print(f"  {index}. {item.label()}")
+    if resolved.alternatives:
+        print("Другие варианты:", ", ".join(artist.name for artist in resolved.alternatives))
     url = music.link(items[0])
     head = httpx.head(url, follow_redirects=True, timeout=10)
     print(f"Ссылка на первый трек: HTTP {head.status_code}, {int(head.headers.get('content-length', 0)) / 1e6:.1f} МБ")
@@ -122,7 +125,11 @@ def run_voice(cfg: dict, use_mic: bool) -> None:
     settings = DeviceSettings()
     assistant = Assistant(cfg, settings)
     assistant.llm.warm_up()
-    brain = Brain(cfg, assistant, Whisper(cfg["stt"]), load_voice(cfg), settings)
+    whisper = Whisper(cfg["stt"])
+    names = assistant.music.taste_names()
+    if names:
+        whisper.prompt = f"{whisper.prompt} Исполнители: {', '.join(names)}."
+    brain = Brain(cfg, assistant, whisper, load_voice(cfg), settings)
     displays = Displays()
     server = DeviceServer(cfg, brain, displays)
     server.start()

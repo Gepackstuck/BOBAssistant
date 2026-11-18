@@ -1,7 +1,9 @@
 import contextvars
+import difflib
 import json
 import re
 import threading
+import time
 from dataclasses import dataclass, field
 
 from yandex_music import Client
@@ -15,6 +17,22 @@ MAX_BITRATE = 192
 KINDS = ("auto", "track", "artist", "album", "playlist", "wave")
 
 current_device = contextvars.ContextVar("current_device", default="mac")
+
+TASTE_PATH = ROOT / "data" / "taste.json"
+TASTE_TTL = 24 * 3600
+TRANSLIT = dict(zip(
+    "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
+    ["a", "b", "v", "g", "d", "e", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r", "s", "t", "u", "f", "kh", "ts", "ch", "sh", "sch", "", "y", "", "e", "yu", "ya"],
+))
+WRONG_RE = re.compile(r"^\s*(?:нет[,\s]+)?(?:не\s+то|не\s+тот|не\s+та|не\s+этот|не\s+эту|другой|другая|другое)\b", re.IGNORECASE)
+
+
+def translit(text: str) -> str:
+    return "".join(TRANSLIT.get(char, char) for char in text.lower())
+
+
+def same_artist(chosen: str, other: str) -> bool:
+    return difflib.SequenceMatcher(None, translit(chosen), translit(other)).ratio() >= 0.8
 
 PAUSE_RE = re.compile(r"^\s*(?:поставь\s+на\s+паузу|пауза|приостанови(?:\s+музыку)?)\b", re.IGNORECASE)
 RESUME_RE = re.compile(r"^\s*(?:продолжи|продолжай|возобнови|играй\s+дальше|сними\s+с\s+паузы)\b", re.IGNORECASE)
@@ -39,6 +57,13 @@ class Item:
 
 
 @dataclass
+class Resolved:
+    items: list
+    name: str
+    alternatives: list = field(default_factory=list)
+
+
+@dataclass
 class Session:
     queue: list[Item] = field(default_factory=list)
     index: int = 0
@@ -48,6 +73,7 @@ class Session:
     volume: float = 0.8
     position: int = 0
     reported_playing: bool = False
+    alternatives: list = field(default_factory=list)
 
 
 def to_item(track) -> Item:
@@ -105,10 +131,27 @@ class Music:
         station = self.api().rotor_station_tracks(WAVE, queue=str(after.track.id) if after else None)
         return [to_item(entry.track) for entry in (station.sequence or [])]
 
-    def resolve(self, query: str, kind: str) -> tuple[list[Item], str]:
+    def artist_alternatives(self, query: str, chosen) -> list:
+        client = self.api()
+        pool = []
+        for text in dict.fromkeys([query, translit(query)]):
+            found = client.search(text, type_="artist")
+            pool.extend((found.artists.results if found and found.artists else [])[:3])
+        seen, result = {chosen.id}, []
+        for artist in pool:
+            if artist.id not in seen and not same_artist(chosen.name, artist.name):
+                seen.add(artist.id)
+                result.append(artist)
+        return result[:3]
+
+    def artist_items(self, artist) -> list[Item]:
+        tracks = self.api().artists_brief_info(artist.id).popular_tracks or []
+        return [to_item(track) for track in tracks]
+
+    def resolve(self, query: str, kind: str) -> Resolved:
         client = self.api()
         if kind == "wave":
-            return self.wave_batch(), "Моя волна"
+            return Resolved(self.wave_batch(), "Моя волна")
         found = client.search(query, type_="all" if kind == "auto" else kind)
         target = kind
         result = None
@@ -123,27 +166,44 @@ class Music:
         if result is None:
             raise RuntimeError("ничего не нашёл")
         if target == "artist":
-            tracks = client.artists_brief_info(result.id).popular_tracks or []
-            return [to_item(track) for track in tracks], result.name
+            return Resolved(self.artist_items(result), result.name, self.artist_alternatives(query, result))
         if target == "album":
             volumes = client.albums_with_tracks(result.id).volumes or []
-            return [to_item(track) for volume in volumes for track in volume], result.title
+            return Resolved([to_item(track) for volume in volumes for track in volume], result.title)
         if target == "playlist":
-            return [to_item(track) for track in self.full(result.fetch_tracks())], result.title
-        return [to_item(result)], result.title
+            return Resolved([to_item(track) for track in self.full(result.fetch_tracks())], result.title)
+        return Resolved([to_item(result)], result.title)
 
     def play(self, query: str, kind: str = "auto", device: str | None = None, volume: float | None = None) -> str:
         device = device or current_device.get()
-        items, name = self.resolve(query, kind if kind in KINDS else "auto")
-        if not items:
+        resolved = self.resolve(query, kind if kind in KINDS else "auto")
+        if not resolved.items:
             raise RuntimeError("ничего не нашёл")
         with self.lock:
             session = self.session(device)
-            session.queue, session.index, session.wave = items, 0, kind == "wave"
+            session.queue, session.index, session.wave = resolved.items, 0, kind == "wave"
+            session.alternatives = list(resolved.alternatives)
             if volume is not None:
                 session.volume = volume
             self.start(device)
-        return f"Играет {name}: {items[0].label()}"
+        text = f"Играет {resolved.name}: {resolved.items[0].label()}"
+        if resolved.alternatives:
+            text += f". Возможно, имелся в виду {resolved.alternatives[0].name}: скажи пользователю, что если это не тот, можно ответить «нет, другой»"
+        return text
+
+    def next_alternative(self, device: str) -> str:
+        with self.lock:
+            session = self.sessions.get(device)
+            if session is None or not session.alternatives:
+                return "Других вариантов нет."
+            artist = session.alternatives.pop(0)
+            items = self.artist_items(artist)
+            if not items:
+                return self.next_alternative(device)
+            session.queue, session.index, session.wave = items, 0, False
+            self.start(device)
+            more = f" Если и это не то, есть ещё {session.alternatives[0].name}." if session.alternatives else ""
+            return f"Тогда {artist.name}: {items[0].label()}.{more}"
 
     def start(self, device: str) -> None:
         session = self.session(device)
@@ -255,7 +315,28 @@ class Music:
                 except Exception as error:
                     print(f"[{device}] музыка: {error}", flush=True)
 
+    def taste_names(self, limit: int = 24) -> list[str]:
+        if TASTE_PATH.exists() and time.time() - TASTE_PATH.stat().st_mtime < TASTE_TTL:
+            return json.loads(TASTE_PATH.read_text())[:limit]
+        try:
+            client = self.api()
+            liked = [entry.artist.name for entry in client.users_likes_artists() if getattr(entry, "artist", None)]
+            shorts = client.users_likes_tracks().tracks[:120]
+            counts: dict[str, int] = {}
+            for track in client.tracks([short.track_id for short in shorts]):
+                if track.artists:
+                    counts[track.artists[0].name] = counts.get(track.artists[0].name, 0) + 1
+            ranked = sorted(counts, key=counts.get, reverse=True)
+            names = list(dict.fromkeys([*liked, *ranked]))
+            TASTE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            TASTE_PATH.write_text(json.dumps(names, ensure_ascii=False))
+            return names[:limit]
+        except Exception:
+            return []
+
     def fast(self, text: str, device: str) -> str | None:
+        if WRONG_RE.search(text) and self.sessions.get(device) and self.sessions[device].alternatives:
+            return self.next_alternative(device)
         if NOW_RE.search(text):
             return self.now_playing(device)
         if not self.active(device):
