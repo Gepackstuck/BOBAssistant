@@ -50,6 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         demo.target = self
         menu.addItem(demo)
         menu.addItem(.separator())
+        let stop = NSMenuItem(title: "Остановить музыку", action: #selector(stopMusic), keyEquivalent: "")
+        stop.target = self
+        menu.addItem(stop)
         let restart = NSMenuItem(title: "Перезапустить Боба", action: #selector(restartServer), keyEquivalent: "")
         restart.target = self
         menu.addItem(restart)
@@ -102,6 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         server.stop()
+    }
+
+    @objc private func stopMusic() {
+        link.stopMusic()
     }
 
     @objc private func restartServer() {

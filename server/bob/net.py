@@ -151,6 +151,12 @@ class DeviceServer(threading.Thread):
                     self.brain.settings.set_theme(name, str(request.get("theme", "dark")))
                 elif request.get("type") == "set_indicator":
                     self.brain.settings.set_indicator(name, str(request.get("style", "classic")))
+                elif request.get("type") == "music_stop":
+                    for device in list(self.devices):
+                        try:
+                            self.music.control("stop", device)
+                        except Exception as error:
+                            print(f"[музыка] {device}: {error}", flush=True)
                 elif request.get("type") == "set_volume":
                     self.brain.settings.set_volume(name, int(request.get("percent", 100)))
         finally:

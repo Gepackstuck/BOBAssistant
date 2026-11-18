@@ -16,6 +16,7 @@ class Whisper:
         self.model = cfg["model"]
         self.language = cfg["language"]
         self.prompt = cfg.get("prompt")
+        self.names: set[str] = set()
         self.transcribe(np.zeros(16000, dtype=np.int16))
 
     def transcribe(self, audio: np.ndarray) -> str:
@@ -34,4 +35,9 @@ class Whisper:
             if segment.get("no_speech_prob", 0) <= NO_SPEECH_LIMIT and segment.get("avg_logprob", 0) >= CONFIDENCE_LIMIT
         ]
         text = " ".join(segment["text"].strip() for segment in segments).strip() if "segments" in result else result.get("text", "").strip()
-        return "" if HALLUCINATION_RE.search(text) else text
+        return "" if HALLUCINATION_RE.search(text) or self.echoes_prompt(text) else text
+
+    def echoes_prompt(self, text: str) -> bool:
+        parts = [part.strip(" .!?«»").lower() for part in re.split(r"[,;]", text) if part.strip(" .!?«»")]
+        known = sum(1 for part in parts if part in self.names)
+        return known >= 4 and known >= 0.7 * len(parts)

@@ -176,6 +176,7 @@ def run_voice(cfg: dict, use_mic: bool) -> None:
     names = list(dict.fromkeys([*cfg["stt"].get("names", []), *assistant.music.taste_names()]))
     if names:
         whisper.prompt = f"{whisper.prompt} Исполнители: {', '.join(names)}."
+        whisper.names = {name.lower() for name in names}
     brain = Brain(cfg, assistant, whisper, load_voice(cfg), settings)
     if cfg["stt"].get("phonetic", True):
         from .phonetic import Phonetic

@@ -35,6 +35,10 @@ final class Link {
         send(["type": "set_voice", "enabled": enabled])
     }
 
+    func stopMusic() {
+        send(["type": "music_stop"])
+    }
+
     func setVolume(_ percent: Int) {
         send(["type": "set_volume", "percent": percent])
     }
