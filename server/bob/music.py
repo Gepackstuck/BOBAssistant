@@ -39,7 +39,8 @@ def same_artist(chosen: str, other: str) -> bool:
 
 
 def words(text: str) -> list[str]:
-    return re.findall(r"\w+", latin_to_speech(text).lower().replace("ё", "е"))
+    spoken = latin_to_speech(text).lower().replace("ё", "е")
+    return re.findall(r"\w+", spoken.replace("йа", "я").replace("йу", "ю").replace("йе", "е"))
 
 
 def close(first: str, second: str) -> bool:
@@ -48,15 +49,24 @@ def close(first: str, second: str) -> bool:
     return difflib.SequenceMatcher(None, first, second).ratio() >= 0.75
 
 
-def covers(wanted: str, title: str, artists: list[str]) -> bool:
+def share(wanted: str, title: str, artists: list[str]) -> float:
     wanted_words = words(wanted)
     have = words(" ".join([title, *artists]))
     found = sum(1 for word in wanted_words if any(close(word, other) for other in have))
-    return bool(wanted_words) and found / len(wanted_words) >= MATCH_SHARE
+    return found / len(wanted_words) if wanted_words else 0.0
+
+
+def candidate_share(wanted: str, candidate) -> float:
+    return share(wanted, candidate.title or "", [artist.name for artist in (candidate.artists or [])])
 
 
 def candidate_matches(wanted: str, candidate) -> bool:
-    return covers(wanted, candidate.title or "", [artist.name for artist in (candidate.artists or [])])
+    return candidate_share(wanted, candidate) >= MATCH_SHARE
+
+
+def shorter_queries(query: str) -> list[str]:
+    parts = query.split()
+    return [query, *(" ".join(parts[:-cut]) for cut in (1, 2) if len(parts) - cut >= 2)]
 
 PAUSE_RE = re.compile(r"^\s*(?:поставь\s+на\s+паузу|пауза|приостанови(?:\s+музыку)?)\b", re.IGNORECASE)
 RESUME_RE = re.compile(r"^\s*(?:продолжи|продолжай|возобнови|играй\s+дальше|сними\s+с\s+паузы)\b", re.IGNORECASE)
@@ -172,6 +182,22 @@ class Music:
         tracks = self.api().artists_brief_info(artist.id).popular_tracks or []
         return [to_item(track) for track in tracks]
 
+    def best_match(self, query: str, kind: str, attribute: str, first):
+        best, best_share, seen = None, 0.0, set()
+        for text in shorter_queries(query):
+            found = first if text == query else self.api().search(text, type_=kind)
+            group = getattr(found, attribute, None)
+            for candidate in (group.results if group and group.results else [])[:20]:
+                if candidate.id in seen:
+                    continue
+                seen.add(candidate.id)
+                value = candidate_share(query, candidate)
+                if value > best_share:
+                    best, best_share = candidate, value
+            if best_share >= 1.0:
+                break
+        return best if best_share >= MATCH_SHARE else None
+
     def resolve(self, query: str, kind: str) -> Resolved:
         client = self.api()
         if kind == "wave":
@@ -187,11 +213,12 @@ class Music:
             if target in ("track", "album") and not candidate_matches(query, result):
                 raise RuntimeError(NOT_FOUND.format(query))
         else:
-            group = getattr(found, {"track": "tracks", "artist": "artists", "album": "albums", "playlist": "playlists"}[kind], None)
-            results = group.results if group and group.results else []
+            attribute = {"track": "tracks", "artist": "artists", "album": "albums", "playlist": "playlists"}[kind]
             if kind in ("track", "album"):
-                results = [candidate for candidate in results[:10] if candidate_matches(query, candidate)]
-            result = results[0] if results else None
+                result = self.best_match(query, kind, attribute, found)
+            else:
+                group = getattr(found, attribute, None)
+                result = group.results[0] if group and group.results else None
         if result is None:
             raise RuntimeError(NOT_FOUND.format(query))
         if target == "artist":
