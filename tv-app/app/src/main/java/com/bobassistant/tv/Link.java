@@ -134,6 +134,7 @@ final class Link extends WebSocketListener {
 
     @Override
     public void onFailure(WebSocket webSocket, Throwable t, Response response) {
+        android.util.Log.w(VoiceService.TAG, "link failed: " + t + (response != null ? " http " + response.code() : ""));
         if (webSocket == socket) {
             retry();
         }
