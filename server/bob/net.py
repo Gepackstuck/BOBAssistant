@@ -38,15 +38,15 @@ class DeviceServer(threading.Thread):
         self.music.bind(self.devices)
         brain.settings.subscribe(self.push_settings)
 
-    def push_settings(self, name: str, voice: bool) -> None:
-        self.displays.publish(name, {"type": "settings", "voice": voice})
+    def push_settings(self, name: str) -> None:
+        self.displays.publish(name, self.brain.settings.snapshot(name))
 
     def sender(self, name: str):
         device = self.devices.get(name)
         if device is not None:
             return device.plate
-        return lambda phase, request="", answer="", voice=True: self.displays.publish(
-            name, plate_payload(phase, request, answer, voice)
+        return lambda phase, request="", answer="", voice=True, theme="dark", window=0: self.displays.publish(
+            name, plate_payload(phase, request, answer, voice, theme, window)
         )
 
     def announce(self, name: str, text: str, voice: str | None) -> str:
@@ -60,8 +60,10 @@ class DeviceServer(threading.Thread):
         device.plate("idle")
         return "ok"
 
-    def demo(self, name: str, voice: bool, scale: float = 1.0) -> str:
-        send = self.sender(name)
+    def demo(self, name: str, voice: bool, scale: float = 1.0, theme: str | None = None) -> str:
+        theme = theme or self.brain.settings.theme(name)
+        base = self.sender(name)
+        send = lambda phase, request="", answer="", voice=True, window=0: base(phase, request, answer, voice, theme, window)
         words = DEMO_REQUEST.split()
         send("listening", "", "", voice)
         time.sleep(0.9 * scale)
@@ -72,7 +74,7 @@ class DeviceServer(threading.Thread):
         time.sleep(1.3 * scale)
         send("answer", DEMO_REQUEST, DEMO_ANSWER, voice)
         time.sleep(4.5 * scale)
-        send("followup", DEMO_REQUEST, DEMO_ANSWER, voice)
+        send("followup", DEMO_REQUEST, DEMO_ANSWER, voice, 3.5 * scale)
         time.sleep(3.5 * scale)
         send("idle", "", "", voice)
         return "ok"
@@ -101,7 +103,7 @@ class DeviceServer(threading.Thread):
                 except Exception as error:
                     result = f"ошибка: {error}"
             elif kind == "demo":
-                result = self.demo(name, bool(request.get("voice", True)), float(request.get("scale", 1.0)))
+                result = self.demo(name, bool(request.get("voice", True)), float(request.get("scale", 1.0)), request.get("theme"))
             else:
                 continue
             connection.send(json.dumps({"type": "result", "result": result}, ensure_ascii=False))
@@ -109,11 +111,13 @@ class DeviceServer(threading.Thread):
     def display(self, connection, name: str) -> None:
         self.displays.add(name, connection)
         try:
-            connection.send(json.dumps({"type": "settings", "voice": self.brain.settings.voice(name)}))
+            connection.send(json.dumps(self.brain.settings.snapshot(name)))
             for message in connection:
                 request = json.loads(message)
                 if request.get("type") == "set_voice":
                     self.brain.settings.set_voice(name, bool(request.get("enabled")))
+                elif request.get("type") == "set_theme":
+                    self.brain.settings.set_theme(name, str(request.get("theme", "dark")))
         finally:
             self.displays.remove(name, connection)
 

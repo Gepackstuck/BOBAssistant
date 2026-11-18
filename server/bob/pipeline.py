@@ -75,9 +75,9 @@ class Listener(threading.Thread):
     def voice(self) -> bool:
         return self.brain.settings.voice(self.device.name)
 
-    def show(self, phase: str, request: str = "", answer: str = "") -> None:
+    def show(self, phase: str, request: str = "", answer: str = "", window: float = 0) -> None:
         self.visible = phase != "idle"
-        self.device.plate(phase, request, answer, self.voice)
+        self.device.plate(phase, request, answer, self.voice, self.brain.settings.theme(self.device.name), window)
 
     def hold(self, value: bool) -> None:
         if value != self.held:
@@ -189,7 +189,7 @@ class Listener(threading.Thread):
             else:
                 self.log(f"⏱ {watch.line()}")
                 window = max(window, reading_seconds(answer))
-            self.show("followup", command, answer)
+            self.show("followup", command, answer, window)
             audio, voiced, shown = self.listen_live([], start_timeout=window)
             watch = Stopwatch()
             command = remove_wake(brain.transcribe(audio)) if voiced else ""

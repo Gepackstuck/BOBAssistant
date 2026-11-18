@@ -29,6 +29,10 @@ REMEMBER_RE = re.compile(r"^\s*запомни(?:те)?[\s,:-]+(?:что\s+)?(.+)
 FORGET_RE = re.compile(r"^\s*забудь(?:те)?[\s,:-]+(?:про\s+|что\s+|о\s+)?(.+)$", re.IGNORECASE | re.DOTALL)
 VOICE_OFF_RE = re.compile(r"(?:выключи|отключи|убери)\s+голос|отвечай\s+(?:только\s+)?(?:текстом|письменно|без\s+голоса)|не\s+отвечай\s+голосом|без\s+голоса", re.IGNORECASE)
 VOICE_ON_RE = re.compile(r"(?:включи|верни)\s+голос|отвечай\s+голосом|говори\s+голосом", re.IGNORECASE)
+THEME_WORD = r"(?:тем\w+|плашк\w+|оформлени\w+|стил\w+)"
+THEME_LIGHT_RE = re.compile(rf"светл\w+\s+{THEME_WORD}|{THEME_WORD}\s+светл\w+", re.IGNORECASE)
+THEME_DARK_RE = re.compile(rf"[тТ][ёе]мн\w+\s+{THEME_WORD}|{THEME_WORD}\s+[тТ][ёе]мн\w+", re.IGNORECASE)
+THEME_TOGGLE_RE = re.compile(rf"(?:смени|поменяй|переключи)\s+{THEME_WORD}", re.IGNORECASE)
 CANCEL_RE = re.compile(r"^(стоп|отмена|ничего|не надо|забудь|отбой)\b", re.IGNORECASE)
 
 
@@ -56,6 +60,16 @@ class Assistant:
         played = self.music.fast(text, device)
         if played is not None:
             return played
+        if THEME_LIGHT_RE.search(text):
+            self.settings.set_theme(device, "light")
+            return "Хорошо, светлая плашка."
+        if THEME_DARK_RE.search(text):
+            self.settings.set_theme(device, "dark")
+            return "Хорошо, тёмная плашка."
+        if THEME_TOGGLE_RE.search(text):
+            light = self.settings.theme(device) == "dark"
+            self.settings.set_theme(device, "light" if light else "dark")
+            return "Хорошо, светлая плашка." if light else "Хорошо, тёмная плашка."
         if VOICE_OFF_RE.search(text):
             self.settings.set_voice(device, False)
             return "Хорошо, теперь отвечаю только текстом."

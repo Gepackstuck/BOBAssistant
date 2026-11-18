@@ -251,7 +251,7 @@ public final class VoiceService extends Service implements Link.Callback {
                 if ("listening".equals(phase) || "thinking".equals(phase) || "answer".equals(phase)) {
                     wakeScreen();
                 }
-                overlay.show(phase, message.optString("request"), message.optString("answer"), message.optBoolean("voice", true));
+                overlay.show(phase, message.optString("request"), message.optString("answer"), message.optBoolean("voice", true), message.optString("theme", "dark"), (float) message.optDouble("window", 0));
                 break;
             case "media":
                 if (!music.isActive()) {

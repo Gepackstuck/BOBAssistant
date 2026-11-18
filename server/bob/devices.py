@@ -33,8 +33,8 @@ class Displays:
                 pass
 
 
-def plate_payload(phase: str, request: str, answer: str, voice: bool) -> dict:
-    return {"type": "plate", "phase": phase, "request": request, "answer": answer, "voice": voice}
+def plate_payload(phase: str, request: str, answer: str, voice: bool, theme: str = "dark", window: float = 0) -> dict:
+    return {"type": "plate", "phase": phase, "request": request, "answer": answer, "voice": voice, "theme": theme, "window": window}
 
 
 class Device:
@@ -50,7 +50,7 @@ class Device:
     def drain(self) -> None:
         raise NotImplementedError
 
-    def plate(self, phase: str, request: str = "", answer: str = "", voice: bool = True) -> None:
+    def plate(self, phase: str, request: str = "", answer: str = "", voice: bool = True, theme: str = "dark", window: float = 0) -> None:
         return None
 
     def media(self, hold: bool) -> None:
@@ -89,8 +89,8 @@ class LocalDevice(Device):
     def drain(self) -> None:
         self.mic.drain()
 
-    def plate(self, phase: str, request: str = "", answer: str = "", voice: bool = True) -> None:
-        self.displays.publish(self.name, plate_payload(phase, request, answer, voice))
+    def plate(self, phase: str, request: str = "", answer: str = "", voice: bool = True, theme: str = "dark", window: float = 0) -> None:
+        self.displays.publish(self.name, plate_payload(phase, request, answer, voice, theme, window))
 
     def music(self, payload: dict) -> None:
         self.player.handle(payload)
@@ -160,8 +160,8 @@ class RemoteDevice(Device):
         except Exception:
             self.closed.set()
 
-    def plate(self, phase: str, request: str = "", answer: str = "", voice: bool = True) -> None:
-        self._send(json.dumps(plate_payload(phase, request, answer, voice), ensure_ascii=False))
+    def plate(self, phase: str, request: str = "", answer: str = "", voice: bool = True, theme: str = "dark", window: float = 0) -> None:
+        self._send(json.dumps(plate_payload(phase, request, answer, voice, theme, window), ensure_ascii=False))
 
     def media(self, hold: bool) -> None:
         self._send(json.dumps({"type": "media", "hold": hold}))

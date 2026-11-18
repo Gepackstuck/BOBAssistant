@@ -77,13 +77,13 @@ def run_control(cfg: dict, payload: dict) -> None:
         print(json.loads(ws.recv(timeout=120))["result"])
 
 
-def run_demo(cfg: dict, device: str, voice: bool, scale: float) -> None:
+def run_demo(cfg: dict, device: str, voice: bool, scale: float, theme: str | None = None) -> None:
     import json
     from websockets.sync.client import connect
     from .net import device_token
     with connect(f"ws://127.0.0.1:{cfg['network']['port']}") as ws:
         ws.send(json.dumps({"type": "hello", "role": "control", "token": device_token(cfg)}))
-        ws.send(json.dumps({"type": "demo", "device": device, "voice": voice, "scale": scale}))
+        ws.send(json.dumps({"type": "demo", "device": device, "voice": voice, "scale": scale, "theme": theme}))
         print(json.loads(ws.recv(timeout=300))["result"])
 
 
@@ -164,6 +164,7 @@ def main() -> None:
     demo = sub.add_parser("plate-demo", help="показать на устройстве плашку без звука")
     demo.add_argument("device")
     demo.add_argument("--no-voice", action="store_true", help="показать вариант «только текст»")
+    demo.add_argument("--theme", choices=["dark", "light"], help="показать тёмную или светлую плашку")
     demo.add_argument("--slow", type=float, default=1.0, help="во сколько раз замедлить, например 3")
     music = sub.add_parser("music", help="найти музыку и проверить ссылку, не играя")
     music.add_argument("query")
@@ -195,7 +196,7 @@ def main() -> None:
         from .yandex_login import login
         login()
     elif args.command == "plate-demo":
-        run_demo(cfg, args.device, not args.no_voice, args.slow)
+        run_demo(cfg, args.device, not args.no_voice, args.slow, args.theme)
     elif args.command == "levels":
         run_levels(cfg)
     elif args.command == "announce":

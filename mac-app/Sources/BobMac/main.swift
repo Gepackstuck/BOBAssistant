@@ -6,7 +6,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var link: Link!
     private let statusLine = NSMenuItem(title: "Нет связи с Бобом", action: nil, keyEquivalent: "")
     private let voiceItem = NSMenuItem(title: "Отвечать голосом", action: #selector(toggleVoice), keyEquivalent: "")
+    private let themeItem = NSMenuItem(title: "Светлая плашка", action: #selector(toggleTheme), keyEquivalent: "")
     private var voiceOn = true
+    private var theme = "dark"
     private var demoTimers: [Timer] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -21,6 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         voiceItem.target = self
         voiceItem.state = .on
         menu.addItem(voiceItem)
+        themeItem.target = self
+        menu.addItem(themeItem)
         let demo = NSMenuItem(title: "Показать пример плашки", action: #selector(runDemo), keyEquivalent: "")
         demo.target = self
         menu.addItem(demo)
@@ -33,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let address = environment["BOB_SERVER"] ?? "ws://127.0.0.1:8765"
         link = Link(url: URL(string: address)!, token: Self.loadToken(), device: environment["BOB_DEVICE"] ?? "mac")
         link.onPlate = { [weak self] state in self?.plate.render(state) }
-        link.onSettings = { [weak self] voice in self?.setVoice(voice) }
+        link.onSettings = { [weak self] voice, theme in self?.apply(voice: voice, theme: theme) }
         link.onConnection = { [weak self] connected in
             self?.statusLine.title = connected ? "Подключено к Бобу" : "Нет связи с Бобом"
         }
@@ -48,13 +52,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return (try? String(contentsOfFile: path, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    private func setVoice(_ enabled: Bool) {
-        voiceOn = enabled
-        voiceItem.state = enabled ? .on : .off
+    private func apply(voice: Bool, theme: String) {
+        voiceOn = voice
+        self.theme = theme
+        voiceItem.state = voice ? .on : .off
+        themeItem.state = theme == "light" ? .on : .off
     }
 
     @objc private func toggleVoice() {
         link.setVoice(!voiceOn)
+    }
+
+    @objc private func toggleTheme() {
+        link.setTheme(theme == "light" ? "dark" : "light")
     }
 
     @objc private func runDemo() {
@@ -63,15 +73,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let request = "какая погода завтра в Москве"
         let answer = "Завтра в Москве от нуля до пяти градусов, мокрый снег."
         let words = request.split(separator: " ").map(String.init)
-        var steps: [(Double, PlateState)] = [(0, PlateState(phase: "listening", request: "", answer: "", voice: voiceOn))]
+        var steps: [(Double, PlateState)] = [(0, PlateState(phase: "listening", request: "", answer: "", voice: voiceOn, theme: theme))]
         for index in 1...words.count {
-            steps.append((0.9 + Double(index) * 0.4, PlateState(phase: "listening", request: words[0..<index].joined(separator: " "), answer: "", voice: voiceOn)))
+            steps.append((0.9 + Double(index) * 0.4, PlateState(phase: "listening", request: words[0..<index].joined(separator: " "), answer: "", voice: voiceOn, theme: theme)))
         }
         let end = 0.9 + Double(words.count) * 0.4
-        steps.append((end + 0.4, PlateState(phase: "thinking", request: request, answer: "", voice: voiceOn)))
-        steps.append((end + 1.7, PlateState(phase: "answer", request: request, answer: answer, voice: voiceOn)))
-        steps.append((end + 6.2, PlateState(phase: "followup", request: request, answer: answer, voice: voiceOn)))
-        steps.append((end + 9.7, PlateState(phase: "idle", request: "", answer: "", voice: voiceOn)))
+        steps.append((end + 0.4, PlateState(phase: "thinking", request: request, answer: "", voice: voiceOn, theme: theme)))
+        steps.append((end + 1.7, PlateState(phase: "answer", request: request, answer: answer, voice: voiceOn, theme: theme, window: 3.5)))
+        steps.append((end + 6.2, PlateState(phase: "followup", request: request, answer: answer, voice: voiceOn, theme: theme, window: 3.5)))
+        steps.append((end + 9.7, PlateState(phase: "idle", request: "", answer: "", voice: voiceOn, theme: theme)))
         for (delay, state) in steps {
             demoTimers.append(Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
                 self?.plate.render(state)
@@ -87,18 +97,23 @@ if arguments.count >= 3, arguments[1] == "--snapshots" {
     _ = NSApplication.shared
     let request = "какая погода завтра в Москве"
     let answer = "Завтра в Москве от нуля до пяти градусов, мокрый снег."
-    let phases: [(String, PlateState)] = [
-        ("1-listening-start", PlateState(phase: "listening", request: "", answer: "", voice: true)),
-        ("2-listening-words", PlateState(phase: "listening", request: "какая погода завтра", answer: "", voice: true)),
-        ("3-thinking", PlateState(phase: "thinking", request: request, answer: "", voice: true)),
-        ("4-answer", PlateState(phase: "answer", request: request, answer: answer, voice: true)),
-        ("5-followup", PlateState(phase: "followup", request: request, answer: answer, voice: true)),
-        ("6-long-answer", PlateState(phase: "answer", request: "расскажи про Белгород", answer: "Белгород — город на юге России, административный центр одноимённой области. Он стоит на реке Северский Донец, в нём около трёхсот шестидесяти тысяч жителей, и это один из центров Центрально-Чернозёмного района.", voice: true))
+    let backdrops: [String: [NSColor]] = [
+        "dark": [NSColor(calibratedRed: 0.42, green: 0.56, blue: 0.23, alpha: 1), NSColor(calibratedRed: 0.1, green: 0.17, blue: 0.1, alpha: 1)],
+        "light": [NSColor(calibratedRed: 0.62, green: 0.76, blue: 0.9, alpha: 1), NSColor(calibratedRed: 0.81, green: 0.85, blue: 0.89, alpha: 1)]
     ]
-    for (name, state) in phases {
-        let view = PlateView(frame: .zero)
-        view.apply(state)
-        view.snapshot(to: directory.appendingPathComponent("\(name).png"))
+    for theme in ["dark", "light"] {
+        let phases: [(String, PlateState)] = [
+            ("listening", PlateState(phase: "listening", request: "какая погода завтра", answer: "", voice: true, theme: theme)),
+            ("thinking", PlateState(phase: "thinking", request: request, answer: "", voice: true, theme: theme)),
+            ("answer", PlateState(phase: "answer", request: request, answer: answer, voice: true, theme: theme)),
+            ("followup", PlateState(phase: "followup", request: request, answer: answer, voice: true, theme: theme, window: 8)),
+            ("long", PlateState(phase: "answer", request: "расскажи про Белгород", answer: "Белгород — город на юге России, административный центр одноимённой области. Он стоит на реке Северский Донец, в нём около трёхсот шестидесяти тысяч жителей.", voice: true, theme: theme))
+        ]
+        for (name, state) in phases {
+            let view = PlateView(frame: .zero)
+            view.apply(state)
+            view.snapshot(to: directory.appendingPathComponent("\(theme)-\(name).png"), backdrop: backdrops[theme]!)
+        }
     }
     exit(0)
 }
