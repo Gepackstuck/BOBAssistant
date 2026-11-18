@@ -1,3 +1,4 @@
+import atexit
 import os
 import signal
 import subprocess
@@ -17,6 +18,8 @@ class MacPlayer:
         self.generation = 0
         self.volume = 0.8
         self.lock = threading.Lock()
+        subprocess.run(["pkill", "-f", "afplay .*/bob-"], check=False)
+        atexit.register(self.stop)
 
     def handle(self, payload: dict) -> None:
         action = payload.get("action")
