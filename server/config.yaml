@@ -1,0 +1,54 @@
+audio:
+  sample_rate: 16000
+  input_device: null
+  output_device: null
+  preroll_seconds: 3.0
+
+wake:
+  engine: vosk
+  vosk_model: models/vosk/vosk-model-small-ru-0.22
+  vosk_url: https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
+  grammar: [окей, ок, сбер, миньон, подручный, боб]
+  triggers:
+    - [окей, сбер]
+    - [ок, сбер]
+    - [миньон]
+    - [подручный]
+    - [боб]
+
+listen:
+  max_seconds: 10
+  silence_ms: 700
+  start_timeout_seconds: 5
+  speech_threshold: 0.5
+
+stt:
+  model: mlx-community/whisper-large-v3-turbo
+  language: ru
+  prompt: Боб, Окей Сбер, Миньон, Подручный.
+
+llm:
+  provider: openai_compat
+  base_url: http://localhost:11434/v1
+  model: qwen3:30b-instruct
+  api_key_env: null
+  max_tokens: 400
+  temperature: 0.3
+  max_tool_rounds: 4
+  session_minutes: 5
+
+tts:
+  engine: silero
+  model_path: models/silero/v4_ru.pt
+  model_url: https://models.silero.ai/models/tts/ru/v4_ru.pt
+  speaker: aidar
+  sample_rate: 48000
+
+persona:
+  name: Боб
+
+place:
+  name: null
+  latitude: null
+  longitude: null
+  timezone: Europe/Moscow
