@@ -26,7 +26,12 @@ def load_voice(cfg: dict):
     return SileroTts(cfg["tts"])
 
 
-def run_ask(cfg: dict, text: str, speak: bool) -> None:
+def pick_voice(tts, cfg: dict, name: str | None, speaker: str | None, speed: float | None) -> dict:
+    base = dict(tts.voices[name or cfg["tts"]["default_voice"]])
+    return {**base, **({"speaker": speaker} if speaker else {}), **({"speed": speed} if speed else {})}
+
+
+def run_ask(cfg: dict, text: str, speak: bool, voice_name: str | None = None) -> None:
     from .assistant import Assistant
     assistant = Assistant(cfg)
     watch = Stopwatch()
@@ -37,16 +42,17 @@ def run_ask(cfg: dict, text: str, speak: bool) -> None:
         from .audio import Speaker
         tts = load_voice(cfg)
         watch = Stopwatch()
-        samples = tts.synth(answer)
+        samples = tts.synth(answer, pick_voice(tts, cfg, voice_name, None, None))
         watch.lap("синтез")
         Speaker(cfg["audio"]["output_device"]).play(samples, tts.sample_rate)
     print(f"⏱ {watch.line()}")
 
 
-def run_say(cfg: dict, text: str) -> None:
+def run_say(cfg: dict, text: str, voice_name: str | None, speaker: str | None, speed: float | None) -> None:
     from .audio import Speaker
     tts = load_voice(cfg)
-    Speaker(cfg["audio"]["output_device"]).play(tts.synth(text), tts.sample_rate)
+    voice = pick_voice(tts, cfg, voice_name, speaker, speed)
+    Speaker(cfg["audio"]["output_device"]).play(tts.synth(text, voice), tts.sample_rate)
 
 
 def run_voice(cfg: dict) -> None:
@@ -57,6 +63,7 @@ def run_voice(cfg: dict) -> None:
     from .wake import VoskWake, remove_wake, strip_wake
 
     audio_cfg = cfg["audio"]
+    log_text = cfg["debug"]["log_text"]
     started = time.perf_counter()
     print("Загружаю модели…")
     assistant = Assistant(cfg)
@@ -87,10 +94,11 @@ def run_voice(cfg: dict) -> None:
             watch = Stopwatch()
             heard = whisper.transcribe(audio) if voiced else ""
             watch.lap("речь→текст")
-            print(f"   whisper: «{heard}» ({len(audio) / mic.sample_rate:.1f} с)")
+            if log_text:
+                print(f"   whisper: «{heard}» ({len(audio) / mic.sample_rate:.1f} с)")
             verified, command = strip_wake(heard)
             if not verified:
-                print(f"   ложное срабатывание: «{heard}»")
+                print(f"   ложное срабатывание: «{heard}»" if log_text else "   ложное срабатывание")
                 wake.reset()
                 continue
             if not command:
@@ -99,7 +107,8 @@ def run_voice(cfg: dict) -> None:
                 watch = Stopwatch()
                 heard = whisper.transcribe(audio) if voiced else ""
                 watch.lap("речь→текст")
-                print(f"   whisper после сигнала: «{heard}» ({len(audio) / mic.sample_rate:.1f} с)")
+                if log_text:
+                    print(f"   whisper после сигнала: «{heard}» ({len(audio) / mic.sample_rate:.1f} с)")
                 command = remove_wake(heard)
             if not command:
                 print("   не услышал команду")
@@ -110,7 +119,7 @@ def run_voice(cfg: dict) -> None:
             watch.lap("модель")
             print(f"Боб: {answer or '(молча)'}")
             if answer:
-                chunks = tts.stream(answer)
+                chunks = tts.stream(answer, tts.voice_for(phrase))
                 first = next(chunks, None)
                 watch.lap("синтез")
                 print(f"⏱ {watch.line()}")
@@ -127,16 +136,20 @@ def main() -> None:
     ask = sub.add_parser("ask", help="задать вопрос текстом")
     ask.add_argument("text")
     ask.add_argument("--say", action="store_true", help="озвучить ответ")
+    ask.add_argument("--voice", help="профиль голоса из config.yaml (alisa, minion)")
     say = sub.add_parser("say", help="произнести текст")
     say.add_argument("text")
+    say.add_argument("--voice", help="профиль голоса из config.yaml (alisa, minion)")
+    say.add_argument("--speaker", help="голос Silero: aidar, baya, kseniya, xenia, eugene")
+    say.add_argument("--speed", type=float, help="ускорение и высота, например 1.35")
     sub.add_parser("listen", help="слушать микрофон (по умолчанию)")
     args = parser.parse_args()
     sys.stdout.reconfigure(line_buffering=True)
     cfg = load_config()
     if args.command == "ask":
-        run_ask(cfg, args.text, args.say)
+        run_ask(cfg, args.text, args.say, args.voice)
     elif args.command == "say":
-        run_say(cfg, args.text)
+        run_say(cfg, args.text, args.voice, args.speaker, args.speed)
     else:
         try:
             run_voice(cfg)

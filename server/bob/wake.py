@@ -45,7 +45,11 @@ class VoskWake:
         self.model = Model(str(model_dir))
         self.sample_rate = sample_rate
         self.grammar = json.dumps([*cfg["grammar"], "[unk]"], ensure_ascii=False)
-        self.triggers = [tuple(trigger) for trigger in cfg["triggers"]]
+        self.triggers = [
+            (key, tuple(tokens))
+            for key, variants in cfg["triggers"].items()
+            for tokens in variants
+        ]
         self.reset()
 
     def reset(self) -> None:
@@ -55,10 +59,10 @@ class VoskWake:
         words = text.split()
         return next(
             (
-                " ".join(trigger)
-                for trigger in self.triggers
-                for i in range(len(words) - len(trigger) + 1)
-                if tuple(words[i:i + len(trigger)]) == trigger
+                key
+                for key, tokens in self.triggers
+                for i in range(len(words) - len(tokens) + 1)
+                if tuple(words[i:i + len(tokens)]) == tokens
             ),
             None,
         )
