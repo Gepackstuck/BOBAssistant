@@ -1,9 +1,12 @@
 import AppKit
+import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let plate = PlateWindow()
     private let card = CardWindow()
     private let lamp = LampWindow()
+    private let server = ServerManager()
+    private let loginItem = NSMenuItem(title: "Запускать при входе в систему", action: #selector(toggleLogin), keyEquivalent: "")
     private var statusItem: NSStatusItem!
     private var link: Link!
     private let statusLine = NSMenuItem(title: "Нет связи с Бобом", action: nil, keyEquivalent: "")
@@ -47,6 +50,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         demo.target = self
         menu.addItem(demo)
         menu.addItem(.separator())
+        let restart = NSMenuItem(title: "Перезапустить Боба", action: #selector(restartServer), keyEquivalent: "")
+        restart.target = self
+        menu.addItem(restart)
+        let log = NSMenuItem(title: "Показать лог", action: #selector(showLog), keyEquivalent: "")
+        log.target = self
+        menu.addItem(log)
+        loginItem.target = self
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(loginItem)
+        menu.addItem(.separator())
         let quit = NSMenuItem(title: "Выйти", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
         statusItem.menu = menu
@@ -66,12 +79,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         link.onSettings = { [weak self] voice, theme, volume, indicator in self?.apply(voice: voice, theme: theme, volume: volume, indicator: indicator) }
         link.onConnection = { [weak self] connected in
             self?.statusLine.title = connected ? "Подключено к Бобу" : "Нет связи с Бобом"
+            if connected {
+                self?.server.connected()
+            }
             if !connected {
                 self?.plate.render(PlateState(phase: "idle", request: "", answer: "", voice: true))
                 self?.card.hide()
             }
         }
+        server.onStatus = { [weak self] text in
+            guard let self, !self.statusLine.title.hasPrefix("Подключено") else { return }
+            self.statusLine.title = text
+        }
+        server.start()
         link.start()
+        if !UserDefaults.standard.bool(forKey: "loginItemOffered") {
+            UserDefaults.standard.set(true, forKey: "loginItemOffered")
+            try? SMAppService.mainApp.register()
+            loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        server.stop()
+    }
+
+    @objc private func restartServer() {
+        statusLine.title = "Перезапускаю сервер…"
+        server.restart()
+    }
+
+    @objc private func showLog() {
+        let console = URL(fileURLWithPath: "/System/Applications/Utilities/Console.app")
+        NSWorkspace.shared.open([server.logURL], withApplicationAt: console, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+            if error != nil {
+                NSWorkspace.shared.open(self.server.logURL)
+            }
+        }
+    }
+
+    @objc private func toggleLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            statusLine.title = "Автозапуск не изменить: \(error.localizedDescription)"
+        }
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
 
     static func loadToken() -> String {

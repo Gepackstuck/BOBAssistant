@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 APP=build/Bob.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
-swiftc -O -swift-version 5 -target arm64-apple-macosx13.0 Sources/BobMac/*.swift -o "$APP/Contents/MacOS/BobMac" -framework AppKit -framework QuartzCore
+swiftc -O -swift-version 5 -target arm64-apple-macosx13.0 Sources/BobMac/*.swift -o "$APP/Contents/MacOS/BobMac" -framework AppKit -framework QuartzCore -framework ServiceManagement
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -17,6 +17,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleShortVersionString</key><string>0.1</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>
+    <key>NSMicrophoneUsageDescription</key><string>Боб слушает кодовое слово и ваши команды.</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict>
