@@ -29,6 +29,11 @@ class Stopwatch:
         return " | ".join(f"{name} {seconds:.2f} с" for name, seconds in self.marks) + f" | итого {total:.2f} с"
 
 
+def scaled(chunks, volume: int):
+    gain = (volume / 100) ** 2
+    return chunks if gain >= 1 else (chunk * gain for chunk in chunks)
+
+
 def reading_seconds(text: str) -> float:
     return max(4.0, 2.0 + 0.06 * len(text))
 
@@ -208,7 +213,7 @@ class Listener(threading.Thread):
             self.show("answer", command, answer)
             window = self.listen_cfg["followup_seconds"]
             if voice:
-                chunks = brain.tts.stream(answer, brain.tts.voice_for(key))
+                chunks = scaled(brain.tts.stream(answer, brain.tts.voice_for(key)), brain.settings.volume(device.name))
                 first = next(chunks, None)
                 watch.lap("синтез")
                 self.log(f"⏱ {watch.line()}")

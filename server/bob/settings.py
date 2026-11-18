@@ -6,6 +6,9 @@ from .config import ROOT
 
 PATH = ROOT / "data" / "devices.json"
 THEMES = ("dark", "light")
+VOLUME_MIN = 10
+VOLUME_MAX = 100
+VOLUME_STEP = 10
 
 
 class DeviceSettings:
@@ -41,8 +44,16 @@ class DeviceSettings:
     def set_theme(self, device: str, theme: str) -> None:
         self.set(device, "theme", theme if theme in THEMES else "dark")
 
+    def volume(self, device: str) -> int:
+        return int(self.get(device, "volume", VOLUME_MAX))
+
+    def set_volume(self, device: str, percent: int) -> int:
+        level = min(VOLUME_MAX, max(VOLUME_MIN, round(percent / VOLUME_STEP) * VOLUME_STEP))
+        self.set(device, "volume", level)
+        return level
+
     def snapshot(self, device: str) -> dict:
-        return {"type": "settings", "voice": self.voice(device), "theme": self.theme(device)}
+        return {"type": "settings", "voice": self.voice(device), "theme": self.theme(device), "volume": self.volume(device)}
 
     def subscribe(self, listener: Callable[[str], None]) -> None:
         self.listeners.append(listener)

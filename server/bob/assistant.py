@@ -1,10 +1,12 @@
 import re
 import time
 
+from num2words import num2words
+
 from .llm import make_llm
 from .memory import Memory
 from .music import Music, current_device
-from .settings import DeviceSettings
+from .settings import VOLUME_MAX, VOLUME_MIN, VOLUME_STEP, DeviceSettings
 from .tools import build_registry
 from .tools.clock import describe, now
 
@@ -38,6 +40,13 @@ THEME_WORD = r"(?:тем\w+|плашк\w+|оформлени\w+|стил\w+)"
 THEME_LIGHT_RE = re.compile(rf"светл\w+\s+{THEME_WORD}|{THEME_WORD}\s+светл\w+", re.IGNORECASE)
 THEME_DARK_RE = re.compile(rf"[тТ][ёе]мн\w+\s+{THEME_WORD}|{THEME_WORD}\s+[тТ][ёе]мн\w+", re.IGNORECASE)
 THEME_TOGGLE_RE = re.compile(rf"(?:смени|поменяй|переключи)\s+{THEME_WORD}", re.IGNORECASE)
+VOICE_LOUDER_RE = re.compile(r"(?:говори|отвечай)\s+громче|голос\s+громче|громче\s+(?:говори|отвечай)", re.IGNORECASE)
+VOICE_QUIETER_RE = re.compile(r"(?:говори|отвечай)\s+тише|голос\s+тише|тише\s+(?:говори|отвечай)", re.IGNORECASE)
+VOICE_LEVEL_RE = re.compile(r"громкость\s+(?:голоса|ассистента|боба|ответов)\s+(?:на\s+)?(\S+?)(?:\s*(?:%|процент\w*))?\s*$", re.IGNORECASE)
+LEVEL_WORDS = {
+    "десять": 10, "двадцать": 20, "тридцать": 30, "сорок": 40, "пятьдесят": 50,
+    "шестьдесят": 60, "семьдесят": 70, "восемьдесят": 80, "девяносто": 90, "сто": 100,
+}
 CLOSING_CORE = {
     "спасибо", "благодарю", "хватит", "достаточно", "довольно", "отбой", "отмена", "стоп", "ничего", "надо",
     "ладно", "понятно", "ясно", "всё", "все", "пока", "свидания", "свободен", "отключись", "замолчи", "помолчи", "забудь",
@@ -70,6 +79,9 @@ class Assistant:
             prompt += "\nЧто ты знаешь о пользователе и семье:\n" + "\n".join(f"- {fact}" for fact in facts)
         return prompt
 
+    def voice_volume_reply(self, percent: int) -> str:
+        return f"Громкость голоса {num2words(percent, lang='ru')} процентов."
+
     def fast_path(self, text: str, device: str) -> str | None:
         played = self.music.fast(text, device)
         if played is not None:
@@ -84,6 +96,22 @@ class Assistant:
             light = self.settings.theme(device) == "dark"
             self.settings.set_theme(device, "light" if light else "dark")
             return "Хорошо, светлая плашка." if light else "Хорошо, тёмная плашка."
+        level = VOICE_LEVEL_RE.search(text)
+        if level:
+            token = level.group(1).strip(" .%").lower()
+            percent = int(token) if token.isdigit() else LEVEL_WORDS.get(token)
+            if percent is not None:
+                return self.voice_volume_reply(self.settings.set_volume(device, percent))
+        if VOICE_LOUDER_RE.search(text):
+            current = self.settings.volume(device)
+            if current >= VOLUME_MAX:
+                return "Это уже максимум, дальше только в настройках звука."
+            return self.voice_volume_reply(self.settings.set_volume(device, current + VOLUME_STEP))
+        if VOICE_QUIETER_RE.search(text):
+            current = self.settings.volume(device)
+            if current <= VOLUME_MIN:
+                return "Тише уже некуда."
+            return self.voice_volume_reply(self.settings.set_volume(device, current - VOLUME_STEP))
         if VOICE_OFF_RE.search(text):
             self.settings.set_voice(device, False)
             return "Хорошо, теперь отвечаю только текстом."

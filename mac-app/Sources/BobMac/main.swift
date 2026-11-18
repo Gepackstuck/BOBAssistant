@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusLine = NSMenuItem(title: "Нет связи с Бобом", action: nil, keyEquivalent: "")
     private let voiceItem = NSMenuItem(title: "Отвечать голосом", action: #selector(toggleVoice), keyEquivalent: "")
     private let themeItem = NSMenuItem(title: "Светлая плашка", action: #selector(toggleTheme), keyEquivalent: "")
+    private let volumeItem = NSMenuItem(title: "Громкость голоса", action: nil, keyEquivalent: "")
+    private var volumeItems: [NSMenuItem] = []
     private var voiceOn = true
     private var theme = "dark"
     private var demoTimers: [Timer] = []
@@ -23,6 +25,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         voiceItem.target = self
         voiceItem.state = .on
         menu.addItem(voiceItem)
+        let volumeMenu = NSMenu()
+        for percent in stride(from: 10, through: 100, by: 10) {
+            let item = NSMenuItem(title: "\(percent)%", action: #selector(chooseVolume(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = percent
+            volumeItems.append(item)
+            volumeMenu.addItem(item)
+        }
+        volumeItem.submenu = volumeMenu
+        menu.addItem(volumeItem)
         themeItem.target = self
         menu.addItem(themeItem)
         let demo = NSMenuItem(title: "Показать пример плашки", action: #selector(runDemo), keyEquivalent: "")
@@ -37,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let address = environment["BOB_SERVER"] ?? "ws://127.0.0.1:8765"
         link = Link(url: URL(string: address)!, token: Self.loadToken(), device: environment["BOB_DEVICE"] ?? "mac")
         link.onPlate = { [weak self] state in self?.plate.render(state) }
-        link.onSettings = { [weak self] voice, theme in self?.apply(voice: voice, theme: theme) }
+        link.onSettings = { [weak self] voice, theme, volume in self?.apply(voice: voice, theme: theme, volume: volume) }
         link.onConnection = { [weak self] connected in
             self?.statusLine.title = connected ? "Подключено к Бобу" : "Нет связи с Бобом"
             if !connected {
@@ -55,7 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return (try? String(contentsOfFile: path, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    private func apply(voice: Bool, theme: String) {
+    private func apply(voice: Bool, theme: String, volume: Int) {
+        volumeItems.forEach { $0.state = $0.tag == volume ? .on : .off }
+        volumeItem.title = "Громкость голоса: \(volume)%"
         voiceOn = voice
         self.theme = theme
         voiceItem.state = voice ? .on : .off
@@ -64,6 +78,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleVoice() {
         link.setVoice(!voiceOn)
+    }
+
+    @objc private func chooseVolume(_ sender: NSMenuItem) {
+        link.setVolume(sender.tag)
     }
 
     @objc private func toggleTheme() {

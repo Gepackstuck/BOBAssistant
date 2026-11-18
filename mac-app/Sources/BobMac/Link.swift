@@ -2,7 +2,7 @@ import Foundation
 
 final class Link {
     var onPlate: ((PlateState) -> Void)?
-    var onSettings: ((Bool, String) -> Void)?
+    var onSettings: ((Bool, String, Int) -> Void)?
     var onConnection: ((Bool) -> Void)?
 
     private let url: URL
@@ -31,6 +31,10 @@ final class Link {
 
     func setVoice(_ enabled: Bool) {
         send(["type": "set_voice", "enabled": enabled])
+    }
+
+    func setVolume(_ percent: Int) {
+        send(["type": "set_volume", "percent": percent])
     }
 
     func setTheme(_ theme: String) {
@@ -85,7 +89,7 @@ final class Link {
                     window: (object["window"] as? NSNumber)?.doubleValue ?? 0
                 ))
             case "settings":
-                self.onSettings?(object["voice"] as? Bool ?? true, object["theme"] as? String ?? "dark")
+                self.onSettings?(object["voice"] as? Bool ?? true, object["theme"] as? String ?? "dark", (object["volume"] as? NSNumber)?.intValue ?? 100)
             default:
                 break
             }
