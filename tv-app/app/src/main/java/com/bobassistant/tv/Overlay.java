@@ -102,7 +102,6 @@ final class Overlay {
         column.addView(small);
         column.addView(big, bigParams);
         row.addView(column);
-        pill.addView(row);
 
         timer = new FrameLayout(context);
         timerTrack = new View(context);
@@ -112,10 +111,16 @@ final class Overlay {
         timerFill.setBackground(fillShape);
         timer.addView(timerTrack, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         timer.addView(timerFill, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        FrameLayout.LayoutParams timerParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, (int) dp(3), Gravity.BOTTOM);
-        timerParams.setMargins((int) dp(26), 0, (int) dp(26), (int) dp(8));
+        LinearLayout content = new LinearLayout(context);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setClipToPadding(false);
+        content.setClipChildren(false);
+        content.addView(row, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams timerParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (int) dp(3));
+        timerParams.setMargins((int) dp(26), (int) dp(-11), (int) dp(26), (int) dp(8));
         timer.setVisibility(View.GONE);
-        pill.addView(timer, timerParams);
+        content.addView(timer, timerParams);
+        pill.addView(content);
 
         pill.setAlpha(0f);
         root = new FrameLayout(context);
