@@ -130,6 +130,9 @@ class RemoteDevice(Device):
         self.played = threading.Event()
         self.music_listener = None
         self.style_provider = None
+        self.apps: list[dict] = []
+        self.tv_state: dict = {}
+        self.tv_event = threading.Event()
         self.peak = 0
         self.rms = 0.0
 
@@ -208,6 +211,17 @@ class RemoteDevice(Device):
             self.played.set()
         elif message.get("type") == "music_event" and self.music_listener:
             self.music_listener(message)
+        elif message.get("type") == "apps":
+            self.apps = message.get("apps", [])
+        elif message.get("type") == "tv_state":
+            self.tv_state = message
+            self.tv_event.set()
+
+    def tv(self, payload: dict, wait: float = 3.0) -> dict:
+        self.tv_event.clear()
+        self._send(json.dumps({"type": "tv", **payload}))
+        self.tv_event.wait(wait)
+        return self.tv_state
 
     @property
     def alive(self) -> bool:

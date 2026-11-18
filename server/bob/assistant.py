@@ -9,6 +9,7 @@ from .memory import Memory
 from .home import Home
 from .music import Music, current_device
 from .planner import Planner
+from .tvcontrol import TvControl
 from .settings import VOLUME_MAX, VOLUME_MIN, VOLUME_STEP, DeviceSettings
 from .tools import build_registry
 from .tools.clock import describe, now
@@ -23,6 +24,7 @@ SYSTEM = """Ты {name}, домашний голосовой ассистент.
 - На любой вопрос о фактах про человека, группу, место, фильм, песню или понятие («кто такой», «сколько лет», «когда родился», «что такое») сначала вызови encyclopedia и отвечай по её тексту, а не по памяти. На «кто такой» отвечай, кем человек является и чем известен, без возраста и дат. Возраст называй только если о нём спросили, бери число из пометки «Полных лет на сегодня», сам не считай. В ответе называй, о ком речь («Лолита Милявская, ей шестьдесят три года»). Фразу «не нашёл» можно говорить только после вызова инструмента.
 - Таймеры, напоминания, будильники и список покупок ставь только инструментами set_timer, set_reminder, set_alarm, shopping_list (время переводи в секунды, минуты или ЧЧ:ММ сам), потом коротко подтверди. На «доброе утро» и «что на сегодня» вызови morning_brief и перескажи его.
 - Про умный дом (свет, лампы, розетки, шторы, сценарии, датчики, температура) ты ничего не знаешь без инструмента: на любой вопрос о состоянии («какой свет включён», «включена ли лампа», «какая температура») сначала вызови home_status, на просьбу включить, выключить или изменить вызови home_control или home_scene. Отвечай только по тому, что вернул инструмент: называй устройства именно их названиями из ответа, ничего не домысливай (комнаты, цвета, яркость). Для температуры и влажности передавай в name слово «температура» или «влажность»; если датчика нет, так и скажи. Не говори, что сделал, пока инструмент не вернул успех; при ошибке так и скажи.
+- Громкостью телевизора, звуком, приложениями на телевизоре и возвратом на главный экран управляй инструментами tv_volume, tv_open_app, tv_home; громкость музыки и голоса Боба не путай с громкостью телевизора.
 - Когда просят запомнить или рассказывают о себе важное, вызови remember. Когда просят забыть — forget.
 - Если подходящего инструмента нет или он не ответил, честно скажи, что не знаешь. Ничего не выдумывай.
 - Если инструмент вернул ошибку или ничего не нашёл (особенно в музыке), не рассказывай, кто или что это, и не угадывай: скажи, что не расслышал, и попроси повторить название.
@@ -55,6 +57,10 @@ LEVEL_WORDS = {
 }
 STYLE_CORNER_RE = re.compile(r"(?:включи|поставь|сделай|переключи|верни|режим|оформление|вариант)[^.!?]*\b(?:угловое|угловой|угловую|уголок|угол|в\s+углу)\b|\b(?:угловое|угловой|уголок)\s+(?:оформление|режим|вариант)", re.IGNORECASE)
 STYLE_PLATE_RE = re.compile(r"(?:верни|включи|поставь|сделай)\s+(?:обычн\w+\s+|стандартн\w+\s+|прежн\w+\s+|старую\s+)?плашк\w+\s*$|плашка\s+как\s+раньше", re.IGNORECASE)
+TV_LOUDER_RE = re.compile(r"^\s*(?:сделай\s+)?(?:по)?громче\b|^\s*добавь\s+(?:громкость|звук)", re.IGNORECASE)
+TV_QUIETER_RE = re.compile(r"^\s*(?:сделай\s+)?(?:по)?тише\b|^\s*убавь\s+(?:громкость|звук)", re.IGNORECASE)
+TV_MUTE_RE = re.compile(r"^\s*(?:выключи|убери|отключи)\s+звук\b|^\s*без\s+звука\b|^\s*заглуши\b", re.IGNORECASE)
+TV_UNMUTE_RE = re.compile(r"^\s*(?:включи|верни)\s+звук\b", re.IGNORECASE)
 LIGHT_STATE_RE = re.compile(r"какой\s+(?:сейчас\s+)?свет\s+(?:сейчас\s+)?(?:включ[её]н|горит)|что\s+(?:сейчас\s+)?(?:включено|горит)|(?:включ[её]н|горит)\s+ли\s+(?:весь\s+|какой-нибудь\s+)?свет|какие\s+лампы\s+(?:включены|горят)", re.IGNORECASE)
 EQUALIZER_ON_RE = re.compile(r"(?:включи|верни|сделай|поставь)\s+(?:разноцветн\w+|цветн\w+|красив\w+)\s+(?:эквалайзер|полоск\w+)|(?:эквалайзер|полоск\w+)\s+(?:разноцветн\w+|цветн\w+)", re.IGNORECASE)
 EQUALIZER_OFF_RE = re.compile(r"(?:верни|включи|сделай|поставь)\s+(?:обычн\w+|стандартн\w+|прежн\w+|классическ\w+)\s+(?:эквалайзер|полоск\w+)|(?:обычн\w+|классическ\w+)\s+(?:эквалайзер|полоск\w+)", re.IGNORECASE)
@@ -83,7 +89,8 @@ class Assistant:
         self.music = Music(cfg)
         self.planner = Planner(cfg)
         self.home = Home()
-        self.registry = build_registry(cfg, self.memory, self.music, self.planner, self.home)
+        self.tv = TvControl(lambda: self.music.devices.get("tv"))
+        self.registry = build_registry(cfg, self.memory, self.music, self.planner, self.home, self.tv)
         self.llm = make_llm(cfg["llm"])
         self.session_seconds = cfg["llm"]["session_minutes"] * 60
         self.session: list = self.llm.new_session()
@@ -104,6 +111,10 @@ class Assistant:
         played = self.music.fast(text, device)
         if played is not None:
             return played
+        if device.startswith("tv") and self.tv.available():
+            for pattern, action in ((TV_LOUDER_RE, "up"), (TV_QUIETER_RE, "down"), (TV_MUTE_RE, "mute"), (TV_UNMUTE_RE, "unmute")):
+                if pattern.search(text):
+                    return self.tv.volume(action)
         if THEME_LIGHT_RE.search(text):
             self.settings.set_theme(device, "light")
             return "Хорошо, светлая плашка."

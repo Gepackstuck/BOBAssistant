@@ -112,6 +112,11 @@ class DeviceServer(threading.Thread):
                     for key, d in self.devices.items()
                 }
                 result = levels
+            elif kind == "ask":
+                try:
+                    result = self.brain.assistant.handle(str(request.get("text", "")), name)
+                except Exception as error:
+                    result = f"ошибка: {error}"
             elif kind == "set_style":
                 self.brain.settings.set_style(name, str(request.get("style", "plate")))
                 result = self.brain.settings.style(name)

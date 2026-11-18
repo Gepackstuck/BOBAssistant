@@ -33,11 +33,12 @@ class Registry:
         return result, failed
 
 
-def build_registry(cfg: dict, memory, music, planner, home) -> Registry:
+def build_registry(cfg: dict, memory, music, planner, home, tvcontrol) -> Registry:
     from ..memory import specs as memory_specs
     from ..music import specs as music_specs
     from ..planner import specs as planner_specs
     from ..home import specs as home_specs
+    from ..tvcontrol import specs as tv_specs
     return Registry([
         Tool(**clock.spec(cfg)),
         Tool(**weather.spec(cfg)),
@@ -47,5 +48,6 @@ def build_registry(cfg: dict, memory, music, planner, home) -> Registry:
         *[Tool(**spec) for spec in memory_specs(memory)],
         *[Tool(**spec) for spec in music_specs(music)],
         *[Tool(**spec) for spec in planner_specs(planner)],
+        *[Tool(**spec) for spec in tv_specs(tvcontrol)],
         *([Tool(**spec) for spec in home_specs(home)] if home.connected() else []),
     ])

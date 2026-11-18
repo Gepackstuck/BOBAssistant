@@ -36,6 +36,7 @@ public final class VoiceService extends Service implements Link.Callback {
     private Overlay overlay;
     private MediaControl media;
     private MusicPlayer music;
+    private TvControl tv;
     private final Player player = new Player();
     private Thread recorder;
     private volatile boolean recording;
@@ -51,6 +52,7 @@ public final class VoiceService extends Service implements Link.Callback {
         overlay = new Overlay(this);
         media = new MediaControl(this);
         music = new MusicPlayer(this, this::musicEvent);
+        tv = new TvControl(this);
     }
 
     @Override
@@ -271,6 +273,9 @@ public final class VoiceService extends Service implements Link.Callback {
     public void onConnected(boolean state) {
         connected = state;
         Log.i(TAG, state ? "connected" : "disconnected");
+        if (state) {
+            sendTv(null);
+        }
         if (!state) {
             overlay.show("idle", "", "", true, "dark", "plate", 0f);
         }
@@ -299,6 +304,9 @@ public final class VoiceService extends Service implements Link.Callback {
             case "music":
                 handleMusic(message);
                 break;
+            case "tv":
+                sendTv(message);
+                break;
             case "chime":
                 Player.chime();
                 break;
@@ -314,6 +322,23 @@ public final class VoiceService extends Service implements Link.Callback {
             default:
                 break;
         }
+    }
+
+    private void sendTv(JSONObject command) {
+        new Thread(() -> {
+            try {
+                if (command == null) {
+                    link.sendJson(tv.apps());
+                    link.sendJson(tv.state());
+                } else {
+                    JSONObject reply = tv.handle(command);
+                    reply.put("id", command.optString("id"));
+                    link.sendJson(reply);
+                }
+            } catch (Exception error) {
+                Log.w(TAG, "tv control failed", error);
+            }
+        }, "bob-tv").start();
     }
 
     private void handleMusic(JSONObject message) {
