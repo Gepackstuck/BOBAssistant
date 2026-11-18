@@ -101,6 +101,14 @@ final class PlateView: NSView {
         var total: CGFloat
     }
 
+    private static func lineHeight(_ font: NSFont) -> CGFloat {
+        ceil(font.ascender - font.descender + font.leading)
+    }
+
+    func reservedHeight() -> CGFloat {
+        Look.padV * 2 + PlateView.lineHeight(Look.smallFont) + Look.lineGap + PlateView.lineHeight(Look.bigFont) * CGFloat(Look.reservedLines)
+    }
+
     func preferredSize() -> NSSize {
         let inner = Look.maxWidth - Look.padH * 2 - Look.indicator - Look.gap
         let content = min(max(width(of: smallText, font: Look.smallFont), width(of: bigText, font: Look.bigFont)), inner)
@@ -110,9 +118,9 @@ final class PlateView: NSView {
 
     private func measure(boxWidth: CGFloat) -> Measure {
         let textWidth = boxWidth - Look.padH * 2 - Look.indicator - Look.gap
-        let small = height(of: smallText, font: Look.smallFont, width: textWidth, lines: 1)
+        let small = PlateView.lineHeight(Look.smallFont)
         let big = height(of: bigText, font: Look.bigFont, width: textWidth, lines: Look.bigMaxLines)
-        let block = small + (small > 0 && big > 0 ? Look.lineGap : 0) + big
+        let block = small + Look.lineGap + big
         let row = max(block, Look.indicator)
         let total = Look.padV * 2 + row
         return Measure(small: small, big: big, block: block, total: total)
@@ -123,17 +131,15 @@ final class PlateView: NSView {
         let layout = measure(boxWidth: bounds.width)
         let row = max(layout.block, Look.indicator)
         let top = Look.padV
-        let lastLine = ceil(Look.bigFont.ascender - Look.bigFont.descender + Look.bigFont.leading)
-        let center = top + row - lastLine / 2
+        let firstLine = PlateView.lineHeight(Look.bigFont)
+        let center = top + layout.small + Look.lineGap + firstLine / 2
         indicator.frame = NSRect(x: Look.padH, y: center - Look.indicator / 2, width: Look.indicator, height: Look.indicator)
         let textX = Look.padH + Look.indicator + Look.gap
         let textWidth = bounds.width - textX - Look.padH
-        var y = top + (row - layout.block) / 2
-        smallLabel.isHidden = layout.small == 0
-        if layout.small > 0 {
-            smallLabel.frame = NSRect(x: textX, y: y, width: textWidth, height: layout.small)
-            y += layout.small + Look.lineGap
-        }
+        var y = top
+        smallLabel.isHidden = smallText.isEmpty
+        smallLabel.frame = NSRect(x: textX, y: y, width: textWidth, height: layout.small)
+        y += layout.small + Look.lineGap
         bigLabel.frame = NSRect(x: textX, y: y, width: textWidth, height: layout.big)
         let trackWidth = bounds.width - Look.padH * 2
         let trackY = bounds.height - Look.timerInset - Look.timerHeight

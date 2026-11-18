@@ -52,7 +52,8 @@ final class PlateWindow {
 
     private func target(for size: NSSize) -> NSRect {
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        return NSRect(x: screen.midX - size.width / 2, y: screen.minY + 48, width: size.width, height: size.height)
+        let top = screen.minY + 24 + view.reservedHeight()
+        return NSRect(x: screen.midX - size.width / 2, y: max(screen.minY + 16, top - size.height), width: size.width, height: size.height)
     }
 
     private func hide() {

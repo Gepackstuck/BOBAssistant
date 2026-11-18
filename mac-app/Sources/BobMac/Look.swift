@@ -52,4 +52,5 @@ enum Look {
     static let smallFont = NSFont.systemFont(ofSize: 12.5)
     static let bigFont = NSFont.systemFont(ofSize: 18, weight: .semibold)
     static let bigMaxLines = 5
+    static let reservedLines = 4
 }
