@@ -16,8 +16,19 @@ COLORS = {
     "красн": "red", "син": "blue", "голуб": "lightblue", "зелен": "green", "зелён": "green", "желт": "yellow", "жёлт": "yellow",
     "оранжев": "orange", "фиолетов": "purple", "лилов": "violet", "розов": "pink", "бел": "white", "бирюзов": "turquoise",
 }
+NUMBERS = {
+    "один": "1", "одна": "1", "одно": "1", "первая": "1", "первый": "1", "первое": "1", "первую": "1",
+    "два": "2", "две": "2", "вторая": "2", "второй": "2", "второе": "2", "вторую": "2",
+    "три": "3", "третья": "3", "третий": "3", "третье": "3", "третью": "3",
+    "четыре": "4", "четвертая": "4", "четвертый": "4", "четвёртая": "4", "четвёртый": "4",
+    "пять": "5", "пятая": "5", "пятый": "5", "шесть": "6", "шестая": "6", "шестой": "6",
+}
 WARM = ("тепл",)
 COLD = ("холодн", "дневн")
+
+
+def tokens(text: str) -> list[str]:
+    return [NUMBERS.get(word, word) for word in words(text)]
 
 
 class Home:
@@ -57,12 +68,12 @@ class Home:
             self.cache = (0.0, [])
 
     def find(self, name: str, domains: tuple[str, ...]) -> dict:
-        wanted = words(name)
+        wanted = tokens(name)
         scored = []
         for entity in self.entities():
             if entity["entity_id"].split(".")[0] not in domains:
                 continue
-            title = words(entity.get("attributes", {}).get("friendly_name", entity["entity_id"]))
+            title = tokens(entity.get("attributes", {}).get("friendly_name", entity["entity_id"]))
             share = sum(1 for word in wanted if any(close(word, other) for other in title)) / len(wanted) if wanted else 0.0
             scored.append((share, -len(title), entity))
         scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
@@ -132,13 +143,13 @@ class Home:
         return f"{title}: включено{', ' + color if color else ''}{details}."
 
     def scene(self, name: str) -> str:
-        wanted = words(name)
+        wanted = tokens(name)
         for entity in self.entities():
             domain = entity["entity_id"].split(".")[0]
             if domain not in ("scene", "script"):
                 continue
             title = entity.get("attributes", {}).get("friendly_name", entity["entity_id"])
-            have = words(title)
+            have = tokens(title)
             if wanted and sum(1 for word in wanted if any(close(word, other) for other in have)) / len(wanted) >= SHARE:
                 self.service(domain, "turn_on", {"entity_id": entity["entity_id"]})
                 return f"Запустил «{title}»."
