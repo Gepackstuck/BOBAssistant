@@ -20,3 +20,6 @@ local.properties
 .build/
 DerivedData/
 xcuserdata/
+wakewords/data/clips/
+wakewords/data/features/
+wakewords/data/*.log

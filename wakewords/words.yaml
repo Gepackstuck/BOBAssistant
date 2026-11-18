@@ -1,0 +1,26 @@
+words:
+  bob:
+    phrases: ["Боб", "Боб!", "Боб?", "Боб."]
+    hard_negatives: ["бобр", "бог", "бобы", "бок", "боль", "поп", "вот", "об", "Бах", "бом", "Роб", "гоп"]
+  minion:
+    phrases: ["Миньо+н", "Миньо+н!", "Мино+н", "Мино+н?", "Миньо+н."]
+    hard_negatives: ["минута", "мнение", "минор", "мильон", "миллион", "минёр", "Мишель", "медальон", "каньон", "Лион", "мой он"]
+  podruchny:
+    phrases: ["Подру+чный", "Подру+чный!", "Подру+чный?", "подру+чный."]
+    hard_negatives: ["подруга", "поручни", "поручик", "поручение", "подружка", "по-русски", "порученный", "подручно"]
+  okey_sber:
+    phrases: ["Окей, Сбер", "Окей Сбер", "Ок, Сбер", "Окей, Сбер!", "Окей, Сбер?", "Оке+й, Сбе+р"]
+    hard_negatives: ["окей", "Окей, Гугл", "Окей, сервер", "ок", "сбор", "Сбербанк", "окей, свет", "Ок, Гугл", "Алиса", "Сберегай", "окей, скорее", "о кей"]
+
+voices:
+  silero_speakers: [aidar, baya, kseniya, xenia, eugene, random]
+  piper: [irina, denis, dmitri, ruslan]
+  holdout: [eugene, ruslan]
+
+samples:
+  positive_per_word: 900
+  random_positive_per_word: 1500
+  augment_per_positive: 3
+  hard_negative_per_word: 300
+  negative_sentences: 1200
+  clip_seconds: 2.0

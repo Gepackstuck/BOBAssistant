@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Боб</string>
+    <string name="channel_name">Голосовой ассистент</string>
+    <string name="notification_text">Боб слушает кодовые слова</string>
+    <string name="state_listening">Слушаю…</string>
+    <string name="state_followup">Можно уточнить…</string>
+    <string name="status_connected">Подключено к серверу %1$s</string>
+    <string name="status_disconnected">Нет связи с сервером %1$s</string>
+    <string name="status_not_configured">Сервер не настроен. Задайте адрес и токен через ADB.</string>
+    <string name="status_no_mic">Нет разрешения на микрофон</string>
+    <string name="status_no_overlay">Нет разрешения на окна поверх других приложений</string>
+</resources>

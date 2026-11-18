@@ -90,7 +90,8 @@ class Listener(threading.Thread):
             self.device.drain()
             return
         self.log(f"🎙 «{key}», слушаю")
-        self.device.show("listening")
+        if not self.verify:
+            self.device.show("listening")
         audio, voiced = capture(self.device, self.vad, self.listen_cfg, self.device.take_preroll())
         watch = Stopwatch()
         heard = self.brain.transcribe(audio) if voiced else ""
@@ -100,10 +101,11 @@ class Listener(threading.Thread):
         verified, command = strip_wake(heard)
         if self.verify and not verified:
             self.log(f"ложное срабатывание: «{heard}»" if self.log_text else "ложное срабатывание")
-            self.device.show("idle")
             return
         if not verified:
             command = remove_wake(heard)
+        if self.verify:
+            self.device.show("listening")
         if not command:
             self.device.chime()
             audio, voiced = capture(self.device, self.vad, self.listen_cfg, [])
