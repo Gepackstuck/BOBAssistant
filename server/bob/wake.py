@@ -17,12 +17,25 @@ def normalize(text: str) -> str:
     return text.lower().replace("ё", "е")
 
 
+PUNCT = " \t\n,.!?-—:;«»\"'"
+SENTENCE_END_RE = re.compile(r"[.!?…]")
+
+
 def strip_wake(text: str) -> tuple[bool, str]:
     matches = list(WAKE_RE.finditer(normalize(text)))
     if not matches:
         return False, text.strip()
-    rest = text[matches[-1].end():]
-    return True, rest.strip(" \t\n,.!?-—:;")
+    last = matches[-1]
+    after = text[last.end():].strip(PUNCT)
+    if after:
+        return True, after
+    before = text[:last.start()]
+    sentence_start = max((m.end() for m in SENTENCE_END_RE.finditer(before)), default=0)
+    return True, WAKE_RE.sub("", before[sentence_start:]).strip(PUNCT)
+
+
+def remove_wake(text: str) -> str:
+    return re.sub(r"\s{2,}", " ", WAKE_RE.sub("", text)).strip(PUNCT)
 
 
 class VoskWake:

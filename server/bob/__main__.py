@@ -54,7 +54,7 @@ def run_voice(cfg: dict) -> None:
     from .audio import Mic, Speaker
     from .listen import Vad, capture
     from .stt import Whisper
-    from .wake import VoskWake, strip_wake
+    from .wake import VoskWake, remove_wake, strip_wake
 
     audio_cfg = cfg["audio"]
     started = time.perf_counter()
@@ -100,7 +100,7 @@ def run_voice(cfg: dict) -> None:
                 heard = whisper.transcribe(audio) if voiced else ""
                 watch.lap("речь→текст")
                 print(f"   whisper после сигнала: «{heard}» ({len(audio) / mic.sample_rate:.1f} с)")
-                command = strip_wake(heard)[1]
+                command = remove_wake(heard)
             if not command:
                 print("   не услышал команду")
                 wake.reset()
