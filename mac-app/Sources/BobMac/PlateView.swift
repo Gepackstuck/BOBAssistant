@@ -66,6 +66,7 @@ final class PlateView: NSView {
 
     private var listening: Bool { state.phase == "listening" }
     private var thinking: Bool { state.phase == "thinking" }
+    private var speaking: Bool { state.phase == "answer" && state.voice }
     private var showsTimer: Bool { state.phase == "followup" && state.window > 0 }
 
     private var smallText: String {
@@ -164,7 +165,7 @@ final class PlateView: NSView {
         timerTrack.backgroundColor = theme.track.cgColor
         smallLabel.textColor = theme.secondary
         bigLabel.textColor = thinking || (listening && state.request.isEmpty) ? theme.secondary : theme.primary
-        indicator.set(listening ? .bars : (thinking ? .spin : .breathe))
+        indicator.set(listening ? .bars : (thinking ? .spin : (speaking ? .speak : .breathe)))
         applyTimer(previous: previous)
         smallLabel.stringValue = smallText
         setBig(bigText, previous: listening && !previous.request.isEmpty ? shownRequest : "")

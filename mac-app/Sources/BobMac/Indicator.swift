@@ -2,11 +2,12 @@ import AppKit
 import QuartzCore
 
 final class Indicator: NSView {
-    enum Mode { case bars, spin, breathe, idle }
+    enum Mode { case bars, spin, breathe, speak, idle }
 
     private let glow = CAGradientLayer()
     private let orb = CAGradientLayer()
     private let bars = (0..<5).map { _ in CAGradientLayer() }
+    private let ripples = (0..<2).map { _ in CAShapeLayer() }
     private(set) var colorful: Bool
     private var heights: [CGFloat] { colorful ? [13, 21, 26, 19, 14] : [10, 20, 13, 24, 11] }
     private let rhythm: [[Double]] = [
@@ -45,6 +46,15 @@ final class Indicator: NSView {
         orb.mask = mask
         layer?.addSublayer(orb)
 
+        for (index, ring) in ripples.enumerated() {
+            ring.bounds = CGRect(x: 0, y: 0, width: Look.indicator, height: Look.indicator)
+            ring.path = CGPath(ellipseIn: ring.bounds, transform: nil)
+            ring.fillColor = nil
+            ring.strokeColor = Look.accent[index == 0 ? 0 : 2].cgColor
+            ring.lineWidth = 1.5
+            ring.isHidden = true
+            layer?.insertSublayer(ring, below: orb)
+        }
         bars.forEach { layer?.addSublayer($0) }
         paint()
     }
@@ -77,6 +87,7 @@ final class Indicator: NSView {
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         glow.position = center
         orb.position = center
+        ripples.forEach { $0.position = center }
         let width: CGFloat = colorful ? 4 : 3.5
         let gap: CGFloat = colorful ? 2.5 : 3
         let total = CGFloat(bars.count) * width + CGFloat(bars.count - 1) * gap
@@ -90,12 +101,13 @@ final class Indicator: NSView {
     func set(_ next: Mode) {
         guard next != mode else { return }
         mode = next
-        for layer in [glow, orb] + bars {
+        for layer in [glow, orb] + bars + ripples {
             layer.removeAllAnimations()
         }
         let showOrb = next != .bars && next != .idle
         glow.isHidden = !showOrb
         orb.isHidden = !showOrb
+        ripples.forEach { $0.isHidden = next != .speak }
         bars.forEach { $0.isHidden = next != .bars }
         switch next {
         case .bars:
@@ -127,6 +139,36 @@ final class Indicator: NSView {
             spin.duration = 1.4
             spin.repeatCount = .infinity
             orb.add(spin, forKey: "spin")
+        case .speak:
+            let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+            spin.fromValue = 0
+            spin.toValue = -2 * Double.pi
+            spin.duration = 3.2
+            spin.repeatCount = .infinity
+            orb.add(spin, forKey: "spin")
+            let pulse = CABasicAnimation(keyPath: "transform.scale")
+            pulse.fromValue = 0.9
+            pulse.toValue = 1.45
+            pulse.duration = 0.7
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            glow.add(pulse, forKey: "speak")
+            for (index, ring) in ripples.enumerated() {
+                let grow = CABasicAnimation(keyPath: "transform.scale")
+                grow.fromValue = 1.0
+                grow.toValue = 2.2
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = 0.75
+                fade.toValue = 0.0
+                let group = CAAnimationGroup()
+                group.animations = [grow, fade]
+                group.duration = 1.5
+                group.repeatCount = .infinity
+                group.timeOffset = Double(index) * 0.75
+                group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                ring.add(group, forKey: "ripple")
+            }
         case .idle:
             break
         case .breathe:
