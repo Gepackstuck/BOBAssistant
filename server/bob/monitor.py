@@ -31,9 +31,6 @@ def describe(event: dict) -> str:
         return f"{GREEN}ПРИНЯТО{RESET} «{event['whisper']}» → команда «{event['command']}»"
     if kind == "turn":
         return f"{GREEN}ответ{RESET} «{event['command']}» → «{event['answer']}»"
-    if kind == "busy":
-        state["deaf"] += event["secs"]
-        return
     if kind == "session":
         return f"{BOLD}старт{RESET} {event.get('mode', '')}"
     return kind
@@ -63,6 +60,9 @@ def apply(state: dict, event: dict) -> None:
     kind = event["kind"]
     if kind == "level":
         state["level"] = {"rms": event["rms"], "peak": event["peak"], "at": event["ts"]}
+        return
+    if kind == "busy":
+        state["deaf"] += event["secs"]
         return
     if kind == "session":
         state.update(start=event["ts"], mode=event.get("mode", ""), wake=0, strong=0, rejected=0, by_giga=0, by_whisper=0, accepted=0, turns=0, deaf=0.0, recent=[])

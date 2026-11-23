@@ -28,7 +28,7 @@ def load_wav(path: Path) -> np.ndarray:
 
 def segments(audio: np.ndarray) -> list[tuple[int, int]]:
     stamps = get_speech_timestamps(
-        load_silero_vad(onnx=True), torch.from_numpy(audio.astype(np.float32) / 32768), sampling_rate=RATE,
+        torch.from_numpy(audio.astype(np.float32) / 32768), load_silero_vad(onnx=True), sampling_rate=RATE,
         min_silence_duration_ms=int(GAP * 1000), min_speech_duration_ms=int(MIN_SEGMENT * 1000), speech_pad_ms=200,
     )
     return [(item["start"], item["end"]) for item in stamps]

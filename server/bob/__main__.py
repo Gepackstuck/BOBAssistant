@@ -231,6 +231,83 @@ def run_observe(cfg: dict, source: str) -> None:
         listener.join()
 
 
+class ReplayDevice:
+    name = "tv"
+    sample_rate = 16000
+
+    def __init__(self, audio):
+        from collections import deque
+        from .audio import BLOCK
+        self.audio = audio
+        self.block = BLOCK
+        self.position = 0
+        self.preroll = deque(maxlen=int(3.0 * self.sample_rate / BLOCK))
+
+    @property
+    def alive(self) -> bool:
+        return self.position + self.block <= len(self.audio)
+
+    def read(self, timeout=None):
+        if not self.alive:
+            return None
+        block = self.audio[self.position:self.position + self.block]
+        self.position += self.block
+        self.preroll.append(block)
+        return block
+
+    def take_preroll(self):
+        blocks = list(self.preroll)
+        self.preroll.clear()
+        return blocks
+
+    def drain(self) -> None:
+        self.preroll.clear()
+
+    def plate(self, *args, **kwargs) -> None:
+        return None
+
+    def media(self, hold: bool) -> None:
+        return None
+
+    def chime(self) -> None:
+        return None
+
+
+def run_replay(cfg: dict, path: str) -> None:
+    import json
+    from pathlib import Path
+    from . import events
+    from .bench import load_wav
+    from .phonetic import Phonetic
+    from .pipeline import Brain, Listener
+    from .settings import DeviceSettings
+    from .stt import Whisper
+
+    out = Path(path).with_suffix(".replay.jsonl")
+    out.unlink(missing_ok=True)
+    events.EVENTS = out
+    cfg["debug"]["log_text"] = True
+    cfg["debug"]["keep_triggers"] = 0
+    brain = Brain(cfg, None, Whisper(cfg["stt"]), None, DeviceSettings())
+    brain.phonetic = Phonetic()
+    brain.phonetic.start()
+    while not brain.phonetic.available:
+        time.sleep(0.5)
+    device = ReplayDevice(load_wav(Path(path)))
+    listener = Listener(device, brain, observe=True)
+    listener.record = False
+    listener.start()
+    listener.join()
+    rows = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    total = len(device.audio) / device.sample_rate
+    deaf = sum(row["audio"] or 0 for row in rows if row["kind"] == "busy")
+    count = lambda kind: sum(1 for row in rows if row["kind"] == kind)
+    print(f"запись {total:.0f} с: срабатываний {count('wake')}, отклонено {count('rejected')}, принято {count('accepted')}, перезапусков по новому слову {count('rearmed')}, глухое время {deaf:.0f} с ({100 * deaf / total:.0f}%)")
+    for row in rows:
+        if row["kind"] in ("accepted", "rejected", "rearmed"):
+            print(f"  {row['kind']}: {row.get('stage', '')} {row.get('whisper', row.get('giga', ''))[:90]}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="bob", description="Голосовой ассистент Боб")
     sub = parser.add_subparsers(dest="command")
@@ -278,6 +355,8 @@ def main() -> None:
     bench.add_argument("wav")
     bench.add_argument("--models", default="whisper-large-v3,whisper-turbo,gigaam")
     bench.add_argument("--minutes", type=float, help="взять только первые N минут")
+    replay = sub.add_parser("replay", help="прогнать запись через детектор и проверки без ответов, посчитать глухое время")
+    replay.add_argument("wav")
     sub.add_parser("monitor", help="живая статистика из журнала событий")
     sub.add_parser("yandex-login", help="войти в Яндекс Музыку по коду и сохранить токен")
     sub.add_parser("levels", help="уровень звука с подключённых устройств, 10 секунд")
@@ -308,6 +387,8 @@ def main() -> None:
     elif args.command == "bench":
         from .bench import run_bench
         run_bench(args.wav, args.models.split(","), args.minutes)
+    elif args.command == "replay":
+        run_replay(cfg, args.wav)
     elif args.command == "monitor":
         from .monitor import run_monitor
         try:

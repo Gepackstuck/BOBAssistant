@@ -6,6 +6,8 @@ import time
 import wave
 from datetime import datetime
 
+import numpy as np
+
 from .config import ROOT
 from .assistant import DETAIL_MARK
 from .devices import Device
@@ -87,6 +89,8 @@ class Listener(threading.Thread):
         self.held = False
         self.visible = False
         self.heard_audio = None
+        self.rewoken: str | None = None
+        self.record = True
 
     def log(self, message: str) -> None:
         print(f"[{self.device.name}] {message}", flush=True)
@@ -193,7 +197,7 @@ class Listener(threading.Thread):
 
     def run(self) -> None:
         silent_blocks = 0
-        recording = self.open_recording() if self.observe else None
+        recording = self.open_recording() if self.observe and self.record else None
         if recording is not None:
             self.tap(recording)
         while self.device.alive:
@@ -208,13 +212,14 @@ class Listener(threading.Thread):
             key = self.wake.feed(block)
             while key:
                 busy_since = time.monotonic()
+                position = getattr(self.device, "position", None)
                 try:
                     key = self.handle(key)
                 except Exception as error:
                     self.log(f"ошибка: {error}")
                     key = None
                 finally:
-                    emit("busy", device=self.device.name, secs=round(time.monotonic() - busy_since, 1))
+                    emit("busy", device=self.device.name, secs=round(time.monotonic() - busy_since, 1), audio=round((self.device.position - position) / self.device.sample_rate, 1) if position is not None else None)
                     if not key:
                         self.hold(False)
                         if self.visible:
@@ -224,11 +229,17 @@ class Listener(threading.Thread):
             recording.close()
         self.log("отключено")
 
-    def listen_live(self, preroll, start_timeout=None, require_wake=False, min_speech=0.0):
+    def listen_live(self, preroll, start_timeout=None, require_wake=False, min_speech=0.0, rewake=False):
         live = self.wake.live()
-        shown = {"on": False, "text": None, "at": 0.0, "latest": ""}
+        shown = {"on": False, "text": None, "at": 0.0, "latest": "", "replayed": 0}
+        self.rewoken = None
 
         def on_block(block):
+            if rewake and shown["replayed"] >= len(preroll):
+                key = self.wake.feed(block)
+                if key and self.wake.strong:
+                    self.rewoken = key
+            shown["replayed"] += 1
             text = live.feed(block)
             if require_wake:
                 matched, text = strip_wake(text) if text else (False, "")
@@ -245,7 +256,7 @@ class Listener(threading.Thread):
                 shown["text"], shown["at"] = text, now
                 self.show("listening", text)
 
-        audio, voiced = capture(self.device, self.vad, self.listen_cfg, preroll, start_timeout, on_block, min_speech, lambda: looks_unfinished(shown["latest"]))
+        audio, voiced = capture(self.device, self.vad, self.listen_cfg, preroll, start_timeout, on_block, min_speech, lambda: looks_unfinished(shown["latest"]), lambda: self.rewoken is not None)
         return audio, voiced, shown["on"], shown["latest"]
 
     def handle(self, key: str) -> str | None:
@@ -258,8 +269,24 @@ class Listener(threading.Thread):
         emit("wake", device=self.device.name, key=key, strong=strong)
         if strong:
             self.show("listening")
-        audio, voiced, confirmed, live_text = self.listen_live(self.device.take_preroll(), require_wake=True)
+        preroll = self.device.take_preroll()
         giga_text = ""
+        quick_ok = False
+        if not strong and preroll:
+            verdict, giga_text = self.phonetic_check(np.concatenate(preroll))
+            if verdict is False:
+                self.log(f"ложное срабатывание (быстрая проверка, GigaAM: «{giga_text}»)" if self.log_text else "ложное срабатывание (быстрая проверка)")
+                emit("rejected", device=self.device.name, key=key, stage="gigaam-fast", giga=giga_text, secs=round(sum(len(block) for block in preroll) / self.device.sample_rate, 1))
+                return None
+            quick_ok = bool(verdict)
+        self.wake.reset()
+        audio, voiced, confirmed, live_text = self.listen_live(preroll, require_wake=True, rewake=True)
+        if self.rewoken:
+            again, self.rewoken = self.rewoken, None
+            emit("rearmed", device=self.device.name, key=again)
+            self.log(f"«{again}» услышано во время прослушивания, начинаю заново")
+            return again
+        confirmed = confirmed or quick_ok
         if not strong and not confirmed:
             verdict, giga_text = self.phonetic_check(audio)
             if verdict is False:

@@ -31,7 +31,7 @@ class Vad:
         self.model.reset_states()
 
 
-def capture(mic, vad: Vad, cfg: dict, preroll: list[np.ndarray], start_timeout: float | None = None, on_block=None, min_speech: float = 0.0, unfinished=None) -> tuple[np.ndarray, bool]:
+def capture(mic, vad: Vad, cfg: dict, preroll: list[np.ndarray], start_timeout: float | None = None, on_block=None, min_speech: float = 0.0, unfinished=None, abort=None) -> tuple[np.ndarray, bool]:
     rate = mic.sample_rate
     block_ms = 1000 * len(preroll[0]) / rate if preroll else 80
     silence_limit = cfg["silence_ms"] / block_ms
@@ -57,6 +57,8 @@ def capture(mic, vad: Vad, cfg: dict, preroll: list[np.ndarray], start_timeout: 
         blocks.append(block)
         if on_block:
             on_block(block)
+        if abort and abort():
+            break
         if vad.speech_ratio(block, rate) > 0.3:
             voiced_ms += block_ms
             quiet = 0

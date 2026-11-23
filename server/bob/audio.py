@@ -27,7 +27,7 @@ def builtin_input() -> int | None:
 class Mic:
     def __init__(self, sample_rate: int, device: str | int | None, preroll_seconds: float):
         self.sample_rate = sample_rate
-        self.frames: queue.Queue[np.ndarray] = queue.Queue()
+        self.frames: queue.Queue[np.ndarray] = queue.Queue(maxsize=400)
         self.preroll: deque[np.ndarray] = deque(maxlen=max(1, int(preroll_seconds * sample_rate / BLOCK)))
         self.muted = False
         self.device = device
@@ -53,7 +53,12 @@ class Mic:
         self.peak = max(int(np.abs(samples).max()), int(self.peak * 0.97))
         self.rms = 0.95 * self.rms + 0.05 * float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
         if not self.muted:
-            self.frames.put(samples.copy())
+            if self.frames.full():
+                try:
+                    self.frames.get_nowait()
+                except queue.Empty:
+                    pass
+            self.frames.put_nowait(samples.copy())
 
     def __enter__(self) -> "Mic":
         self.stream.start()
