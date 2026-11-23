@@ -27,15 +27,17 @@ def device_token(cfg: dict) -> str:
 
 
 class DeviceServer(threading.Thread):
-    def __init__(self, cfg: dict, brain: Brain, displays: Displays):
+    def __init__(self, cfg: dict, brain: Brain, displays: Displays, observe: bool = False):
         super().__init__(daemon=True, name="device-server")
+        self.observe = observe
         self.cfg = cfg
         self.brain = brain
         self.displays = displays
         self.token = device_token(cfg)
         self.devices: dict[str, Device] = {}
-        self.music = brain.assistant.music
-        self.music.bind(self.devices)
+        self.music = None if observe else brain.assistant.music
+        if self.music:
+            self.music.bind(self.devices)
         brain.settings.subscribe(self.push_settings)
 
     def push_settings(self, name: str) -> None:
@@ -183,10 +185,11 @@ class DeviceServer(threading.Thread):
             return
         device = RemoteDevice(name, connection, self.cfg["audio"]["preroll_seconds"], int(hello.get("rate", 16000)))
         self.devices[name] = device
+        device.echo_gain = float(self.cfg["audio"].get("ref_gain", 1.0))
         device.style_provider = lambda: self.brain.settings.style(name)
-        device.music_listener = lambda message: self.music.on_event(name, message)
+        device.music_listener = (lambda message: self.music.on_event(name, message)) if self.music else None
         print(f"[{name}] подключено", flush=True)
-        Listener(device, self.brain).start()
+        Listener(device, self.brain, observe=self.observe).start()
         try:
             for message in connection:
                 if isinstance(message, bytes):

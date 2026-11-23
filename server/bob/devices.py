@@ -7,6 +7,8 @@ from typing import Iterable
 import numpy as np
 
 from .audio import BLOCK, Mic, Speaker
+from .echo import EchoCanceller
+from .events import emit
 from .macplayer import MacPlayer
 
 
@@ -135,11 +137,25 @@ class RemoteDevice(Device):
         self.tv_event = threading.Event()
         self.peak = 0
         self.rms = 0.0
+        self.echo: EchoCanceller | None = None
+        self.echo_gain = 1.0
+        self.reference = False
+        self.raw_sink = None
+
+    def split(self, payload: bytes) -> np.ndarray:
+        count = len(payload) // 6
+        mic = np.frombuffer(payload[: count * 2], dtype="<i2")
+        ref = np.frombuffer(payload[count * 2: count * 6], dtype="<f4")
+        if self.raw_sink:
+            self.raw_sink(mic, ref)
+        if self.echo is None:
+            self.echo = EchoCanceller(self.sample_rate, self.echo_gain)
+        return self.echo.process(mic, ref)
 
     def feed(self, payload: bytes) -> None:
         if self.muted.is_set():
             return
-        samples = np.frombuffer(payload, dtype="<i2")
+        samples = self.split(payload) if self.reference else np.frombuffer(payload, dtype="<i2")
         if samples.size:
             self.peak = max(int(np.abs(samples).max()), int(self.peak * 0.97))
             self.rms = 0.95 * self.rms + 0.05 * float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
@@ -211,6 +227,11 @@ class RemoteDevice(Device):
             self.played.set()
         elif message.get("type") == "music_event" and self.music_listener:
             self.music_listener(message)
+        elif message.get("type") == "audio_format":
+            self.reference = bool(message.get("reference"))
+            emit("audio_format", device=self.name, reference=self.reference)
+            self.echo = None
+            self.pending = np.zeros(0, dtype=np.int16)
         elif message.get("type") == "apps":
             self.apps = message.get("apps", [])
         elif message.get("type") == "tv_state":

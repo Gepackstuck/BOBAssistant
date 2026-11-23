@@ -83,6 +83,7 @@ public final class MainActivity extends Activity {
         }
         text.append("\nЭхоподавление: ").append(VoiceService.echoCanceller);
         text.append("\nМикрофон: ").append(VoiceService.micSetup);
+        text.append("\nОпорный канал эха: ").append(VoiceService.referenceState);
         status.setText(text);
         handler.postDelayed(this::refresh, 1000);
     }

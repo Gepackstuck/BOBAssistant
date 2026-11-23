@@ -9,6 +9,7 @@ from datetime import datetime
 from .config import ROOT
 from .assistant import DETAIL_MARK
 from .devices import Device
+from .events import emit
 from .listen import Vad, capture, looks_unfinished
 from .music import phonetic_hint
 from .wake import GIGA_WAKE_RE, make_wake, remove_wake, strip_wake
@@ -17,6 +18,7 @@ PLATE_INTERVAL = 0.12
 PLAY_RE = re.compile(r"^\s*(?:боб[\s,.!]+)?(?:включи|поставь|сыграй|запусти|найди|давай)\b", re.IGNORECASE)
 UTTERANCES = ROOT / "data" / "utterances"
 TRIGGERS = ROOT / "data" / "triggers"
+RECORDINGS = ROOT / "data" / "recordings"
 
 
 class Stopwatch:
@@ -71,10 +73,11 @@ class Brain:
 
 
 class Listener(threading.Thread):
-    def __init__(self, device: Device, brain: Brain):
+    def __init__(self, device: Device, brain: Brain, observe: bool = False):
         super().__init__(daemon=True, name=f"listener-{device.name}")
         self.device = device
         self.brain = brain
+        self.observe = observe
         cfg = brain.cfg
         self.wake = make_wake(cfg["wake"], device.sample_rate)
         self.vad = Vad(cfg["listen"]["speech_threshold"])
@@ -143,17 +146,56 @@ class Listener(threading.Thread):
         return self.brain.settings.voice(self.device.name)
 
     def show(self, phase: str, request: str = "", answer: str = "", window: float = 0) -> None:
+        if self.observe:
+            return
         self.visible = phase != "idle"
         self.device.plate(phase, request, answer, self.voice, self.brain.settings.theme(self.device.name), window)
 
     def hold(self, value: bool) -> None:
+        if self.observe:
+            return
         if value != self.held:
             self.held = value
             self.device.media(value)
             self.brain.assistant.music.duck(self.device.name, value)
 
+    def open_recording(self):
+        RECORDINGS.mkdir(parents=True, exist_ok=True)
+        file = wave.open(str(RECORDINGS / f"{self.device.name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.wav"), "wb")
+        file.setnchannels(1)
+        file.setsampwidth(2)
+        file.setframerate(self.device.sample_rate)
+        return file
+
+    def tap(self, recording):
+        read = self.device.read
+        level = {"at": 0.0}
+
+        def tapped(timeout=None):
+            block = read(timeout)
+            if block is not None:
+                recording.writeframes(block.astype("int16").tobytes())
+                now = time.monotonic()
+                if now - level["at"] >= 2.0:
+                    level["at"] = now
+                    emit("level", device=self.device.name, rms=round(float(getattr(self.device, "rms", 0.0)), 1), peak=int(getattr(self.device, "peak", 0)))
+            return block
+
+        self.device.read = tapped
+        if hasattr(self.device, "raw_sink"):
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            raw_mic = wave.open(str(RECORDINGS / f"{self.device.name}-raw-mic-{stamp}.wav"), "wb")
+            raw_mic.setnchannels(1)
+            raw_mic.setsampwidth(2)
+            raw_mic.setframerate(self.device.sample_rate)
+            raw_ref = (RECORDINGS / f"{self.device.name}-raw-ref-{stamp}.f32").open("wb")
+            self.device.raw_sink = lambda mic, ref: (raw_mic.writeframes(mic.tobytes()), raw_ref.write(ref.tobytes()))
+
     def run(self) -> None:
         silent_blocks = 0
+        recording = self.open_recording() if self.observe else None
+        if recording is not None:
+            self.tap(recording)
         while self.device.alive:
             block = self.device.read(timeout=1)
             if block is None:
@@ -165,17 +207,21 @@ class Listener(threading.Thread):
                     silent_blocks = -1
             key = self.wake.feed(block)
             while key:
+                busy_since = time.monotonic()
                 try:
                     key = self.handle(key)
                 except Exception as error:
                     self.log(f"ошибка: {error}")
                     key = None
                 finally:
+                    emit("busy", device=self.device.name, secs=round(time.monotonic() - busy_since, 1))
                     if not key:
                         self.hold(False)
                         if self.visible:
                             self.show("idle")
                     self.wake.reset()
+        if recording is not None:
+            recording.close()
         self.log("отключено")
 
     def listen_live(self, preroll, start_timeout=None, require_wake=False, min_speech=0.0):
@@ -209,6 +255,7 @@ class Listener(threading.Thread):
             return None
         strong = self.wake.strong
         self.log(f"🎙 «{key}», слушаю" + ("" if strong else " (слабое срабатывание)"))
+        emit("wake", device=self.device.name, key=key, strong=strong)
         if strong:
             self.show("listening")
         audio, voiced, confirmed, live_text = self.listen_live(self.device.take_preroll(), require_wake=True)
@@ -217,6 +264,7 @@ class Listener(threading.Thread):
             verdict, giga_text = self.phonetic_check(audio)
             if verdict is False:
                 self.log(f"ложное срабатывание (слабое, GigaAM: «{giga_text}»)" if self.log_text else "ложное срабатывание (слабое)")
+                emit("rejected", device=self.device.name, key=key, stage="gigaam", giga=giga_text, secs=round(len(audio) / self.device.sample_rate, 1))
                 self.save_trigger(audio, key, strong, confirmed, giga_text, "", False)
                 return None
             confirmed = bool(verdict)
@@ -228,11 +276,15 @@ class Listener(threading.Thread):
         verified, command = strip_wake(heard)
         if self.verify and not verified and not confirmed:
             self.log(f"ложное срабатывание: «{heard}»" if self.log_text else "ложное срабатывание")
+            emit("rejected", device=self.device.name, key=key, stage="whisper", giga=giga_text, whisper=heard, vosk=live_text, secs=round(len(audio) / self.device.sample_rate, 1))
             self.save_trigger(audio, key, strong, confirmed, giga_text, heard, False)
             return None
         self.save_trigger(audio, key, strong, confirmed, giga_text, heard, True)
         if not verified:
             command = self.after_wake(heard, live_text) if confirmed else remove_wake(heard)
+        emit("accepted", device=self.device.name, key=key, strong=strong, giga=giga_text, whisper=heard, vosk=live_text, command=command, secs=round(len(audio) / self.device.sample_rate, 1), stt_secs=round(watch.marks[0][1], 2) if watch.marks else None)
+        if self.observe:
+            return None
         self.hold(True)
         if not command:
             self.show("listening")
@@ -274,6 +326,7 @@ class Listener(threading.Thread):
             spoken = spoken.strip()
             shown = f"{spoken} {extra.strip()}".strip()
             self.log(f"Боб: {spoken or '(молча)'}" + (f" ‖ на плашке: {extra.strip()}" if extra.strip() else ""))
+            emit("turn", device=device.name, command=command, answer=spoken, model_secs=round(watch.marks[-1][1], 2) if watch.marks else None)
             if not answer:
                 break
             voice = self.voice

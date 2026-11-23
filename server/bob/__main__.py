@@ -188,7 +188,7 @@ def run_voice(cfg: dict, use_mic: bool) -> None:
     assistant.planner.on_fire = server.fire
     assistant.home.notify = lambda device, payload: server.devices[device].card(payload) if device in server.devices else None
     assistant.planner.start()
-    print(f"Готово за {time.perf_counter() - started:.1f} с. Скажите «Боб», «Миньон», «Подручный» или «Окей, Сбер».")
+    print(f"Готово за {time.perf_counter() - started:.1f} с. Скажите «Джарвис».")
     if not use_mic:
         threading.Event().wait()
     with Mic(audio_cfg["sample_rate"], audio_cfg["input_device"], audio_cfg["preroll_seconds"]) as mic:
@@ -196,6 +196,37 @@ def run_voice(cfg: dict, use_mic: bool) -> None:
         server.devices["mac"] = local
         local.music_listener = lambda message: assistant.music.on_event("mac", message)
         listener = Listener(local, brain)
+        listener.start()
+        listener.join()
+
+
+def run_observe(cfg: dict, source: str) -> None:
+    from .audio import Mic, Speaker
+    from .devices import Displays, LocalDevice
+    from .events import emit
+    from .net import DeviceServer
+    from .pipeline import Brain, Listener
+    from .settings import DeviceSettings
+    from .stt import Whisper
+
+    audio_cfg = cfg["audio"]
+    cfg["debug"]["log_text"] = True
+    print("Загружаю модели…")
+    whisper = Whisper(cfg["stt"])
+    settings = DeviceSettings()
+    brain = Brain(cfg, None, whisper, None, settings)
+    from .phonetic import Phonetic
+    brain.phonetic = Phonetic()
+    brain.phonetic.start()
+    emit("session", mode=f"наблюдение, источник: {'микрофон ТВ' if source == 'tv' else 'микрофон Мака'}, без ответов")
+    print("Наблюдаю: пишу журнал и запись звука, не отвечаю.")
+    if source == "tv":
+        server = DeviceServer(cfg, brain, Displays(), observe=True)
+        server.start()
+        threading.Event().wait()
+    with Mic(audio_cfg["sample_rate"], audio_cfg["input_device"], audio_cfg["preroll_seconds"]) as mic:
+        local = LocalDevice("mac", mic, Speaker(audio_cfg["output_device"], mic), Displays())
+        listener = Listener(local, brain, observe=True)
         listener.start()
         listener.join()
 
@@ -241,6 +272,13 @@ def main() -> None:
     live = sub.add_parser("ask-live", help="отправить фразу работающему Бобу как с устройства (без звука), ответ в консоль")
     live.add_argument("device")
     live.add_argument("text")
+    observe = sub.add_parser("observe", help="слушать, вести журнал и запись, ничего не отвечать")
+    observe.add_argument("--source", choices=["tv", "mac"], default="tv", help="чей микрофон слушать (по умолчанию ТВ)")
+    bench = sub.add_parser("bench", help="сравнить модели распознавания на записи")
+    bench.add_argument("wav")
+    bench.add_argument("--models", default="whisper-large-v3,whisper-turbo,gigaam")
+    bench.add_argument("--minutes", type=float, help="взять только первые N минут")
+    sub.add_parser("monitor", help="живая статистика из журнала событий")
     sub.add_parser("yandex-login", help="войти в Яндекс Музыку по коду и сохранить токен")
     sub.add_parser("levels", help="уровень звука с подключённых устройств, 10 секунд")
     listen = sub.add_parser("listen", help="слушать микрофон Мака и устройства (по умолчанию)")
@@ -262,6 +300,20 @@ def main() -> None:
         run_control(cfg, {"type": "music_play", "device": args.device, "query": args.query, "kind": args.kind, "volume": args.volume})
     elif args.command == "music-control":
         run_control(cfg, {"type": "music_control", "device": args.device, "action": args.action})
+    elif args.command == "observe":
+        try:
+            run_observe(cfg, args.source)
+        except KeyboardInterrupt:
+            print("\nПока!")
+    elif args.command == "bench":
+        from .bench import run_bench
+        run_bench(args.wav, args.models.split(","), args.minutes)
+    elif args.command == "monitor":
+        from .monitor import run_monitor
+        try:
+            run_monitor()
+        except KeyboardInterrupt:
+            pass
     elif args.command == "yandex-login":
         from .yandex_login import login
         login()

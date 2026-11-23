@@ -8,13 +8,13 @@ from .config import resolve
 from .models import ensure_zip_dir
 
 WAKE_RE = re.compile(
-    r"(?:о?кей|ок|okay|ok)[\s,.!-]*сбер\w*|минь?он\w*|подручн\w*|\bбоб\w*",
+    r"(?:д?жарв[иеэ]с\w*|дж[аеэ]рв[иеэ]с\w*)",
     re.IGNORECASE,
 )
 
 
 STRONG_WAIT_BLOCKS = 6
-GIGA_WAKE_RE = re.compile(r"\bбоб|миньон|подручн|\bсбер|\bпоп\b|\bбоп\b", re.IGNORECASE)
+GIGA_WAKE_RE = re.compile(r"жарв[иеэ]с|жерв[иеэ]с|дж[аеэ]рв[иеэ]с|ярвис", re.IGNORECASE)
 
 
 def normalize(text: str) -> str:

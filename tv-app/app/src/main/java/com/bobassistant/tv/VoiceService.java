@@ -20,6 +20,8 @@ import android.util.Log;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.concurrent.ArrayBlockingQueue;
+
 public final class VoiceService extends Service implements Link.Callback {
     static final String TAG = "BobTv";
     private static final String CHANNEL = "bob";
@@ -31,6 +33,8 @@ public final class VoiceService extends Service implements Link.Callback {
     static volatile String echoCanceller = "нет";
     static volatile String micSetup = "";
     private static final int[] SOURCES = {6, 1, 9, 5, 7, 0};
+    private static final int ECHO_REFERENCE = 1997;
+    static volatile String referenceState = "нет";
 
     private Link link;
     private Overlay overlay;
@@ -41,6 +45,9 @@ public final class VoiceService extends Service implements Link.Callback {
     private Thread recorder;
     private volatile boolean recording;
     private volatile AudioRecord active;
+    private volatile AudioRecord referenceRecord;
+    private final ArrayBlockingQueue<float[]> reference = new ArrayBlockingQueue<>(16);
+    private Thread referenceThread;
 
     static void start(Context context) {
         context.startForegroundService(new Intent(context, VoiceService.class));
@@ -92,6 +99,7 @@ public final class VoiceService extends Service implements Link.Callback {
             } catch (IllegalStateException ignored) {
             }
         }
+        stopReference();
         if (recorder != null) {
             recorder.interrupt();
             try {
@@ -206,6 +214,102 @@ public final class VoiceService extends Service implements Link.Callback {
         startRecorder();
     }
 
+    private void startReference() {
+        reference.clear();
+        AudioRecord record = null;
+        int channels = 1;
+        for (; channels <= 2 && record == null; channels++) {
+            record = open(ECHO_REFERENCE, channels);
+        }
+        channels--;
+        if (record == null) {
+            referenceState = "недоступен";
+            Log.i(TAG, "echo reference: unavailable");
+            sendFormat(false);
+            return;
+        }
+        final AudioRecord opened = record;
+        final int count = channels;
+        referenceRecord = opened;
+        referenceState = "каналов " + count;
+        Log.i(TAG, "echo reference: opened channels=" + count);
+        try {
+            opened.startRecording();
+        } catch (IllegalStateException error) {
+            referenceRecord = null;
+            referenceState = "не стартовал";
+            opened.release();
+            sendFormat(false);
+            return;
+        }
+        referenceThread = new Thread(() -> readReference(opened, count), "bob-ref");
+        referenceThread.start();
+        sendFormat(true);
+    }
+
+    private void readReference(AudioRecord record, int channels) {
+        float[] frames = new float[BLOCK * channels];
+        float peak = 0;
+        long next = System.currentTimeMillis() + 3000;
+        while (recording) {
+            int read = record.read(frames, 0, frames.length, AudioRecord.READ_BLOCKING);
+            if (read <= 0) {
+                break;
+            }
+            int samples = read / channels;
+            float[] mono = new float[BLOCK];
+            for (int i = 0; i < samples && i < BLOCK; i++) {
+                mono[i] = channels == 2 ? (frames[2 * i] + frames[2 * i + 1]) / 2f : frames[i];
+                peak = Math.max(peak, Math.abs(mono[i]));
+            }
+            if (!reference.offer(mono)) {
+                reference.poll();
+                reference.offer(mono);
+            }
+            if (System.currentTimeMillis() >= next) {
+                Log.i(TAG, "echo reference peak=" + peak);
+                referenceState = "каналов " + channels + ", пик " + Math.round(peak * 1000) / 1000f;
+                peak = 0;
+                next += 3000;
+            }
+        }
+    }
+
+    private void stopReference() {
+        AudioRecord current = referenceRecord;
+        referenceRecord = null;
+        if (current != null) {
+            try {
+                current.stop();
+            } catch (IllegalStateException ignored) {
+            }
+        }
+        Thread thread = referenceThread;
+        referenceThread = null;
+        if (thread != null) {
+            try {
+                thread.join(2000);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (current != null) {
+            current.release();
+        }
+        referenceState = "нет";
+        sendFormat(false);
+    }
+
+    private void sendFormat(boolean withReference) {
+        if (link == null) {
+            return;
+        }
+        try {
+            link.setFormat(new JSONObject().put("type", "audio_format").put("reference", withReference));
+        } catch (JSONException ignored) {
+        }
+    }
+
     private void record() {
         int channels = Prefs.channels(this);
         AudioRecord record = open(Prefs.source(this), channels);
@@ -223,8 +327,10 @@ public final class VoiceService extends Service implements Link.Callback {
             }
         }
         Log.i(TAG, "echo canceller: " + echoCanceller);
+        startReference();
         float[] frames = new float[BLOCK * channels];
-        byte[] out = new byte[BLOCK * 2];
+        byte[] out = new byte[BLOCK * 6];
+        java.nio.ByteBuffer packed = java.nio.ByteBuffer.wrap(out).order(java.nio.ByteOrder.LITTLE_ENDIAN);
         float gain = Prefs.gain(this);
         micSetup += ", усиление " + Math.round(gain);
         record.startRecording();
@@ -238,14 +344,19 @@ public final class VoiceService extends Service implements Link.Callback {
                     break;
                 }
                 int samples = read / channels;
+                boolean withReference = referenceRecord != null;
+                float[] echo = withReference ? reference.poll() : null;
                 for (int i = 0; i < samples; i++) {
                     float mixed = channels == 2 ? (frames[2 * i] + frames[2 * i + 1]) / 2f : frames[i];
                     int value = Math.round(Math.max(-1f, Math.min(1f, mixed * gain)) * 32767f);
                     out[2 * i] = (byte) value;
                     out[2 * i + 1] = (byte) (value >> 8);
+                    if (withReference) {
+                        packed.putFloat(2 * samples + 4 * i, echo != null && i < echo.length ? echo[i] : 0f);
+                    }
                 }
                 if (samples > 0) {
-                    link.sendAudio(out, samples * 2);
+                    link.sendAudio(out, withReference ? samples * 6 : samples * 2);
                 }
             }
         } finally {
@@ -258,6 +369,7 @@ public final class VoiceService extends Service implements Link.Callback {
             if (canceller != null) {
                 canceller.release();
             }
+            stopReference();
         }
     }
 

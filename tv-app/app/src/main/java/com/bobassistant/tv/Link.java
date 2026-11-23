@@ -37,6 +37,7 @@ final class Link extends WebSocketListener {
     private volatile boolean open;
     private volatile boolean stopped;
     private long backoff = 1000;
+    private volatile String format;
 
     Link(String url, String token, String device, Callback callback) {
         this.url = url;
@@ -68,6 +69,14 @@ final class Link extends WebSocketListener {
         WebSocket current = socket;
         if (open && current != null && current.queueSize() < 256 * 1024) {
             current.send(ByteString.of(pcm, 0, length));
+        }
+    }
+
+    void setFormat(JSONObject message) {
+        format = message.toString();
+        WebSocket current = socket;
+        if (open && current != null) {
+            current.send(format);
         }
     }
 
@@ -106,6 +115,10 @@ final class Link extends WebSocketListener {
                     .toString());
         } catch (JSONException ignored) {
             return;
+        }
+        String pending = format;
+        if (pending != null) {
+            webSocket.send(pending);
         }
         open = true;
         backoff = 1000;
