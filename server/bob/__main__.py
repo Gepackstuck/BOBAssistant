@@ -275,7 +275,7 @@ class ReplayDevice:
         return None
 
 
-def run_replay(cfg: dict, path: str) -> None:
+def run_replay(cfg: dict, path: str, gigaam: bool = True) -> None:
     import json
     from pathlib import Path
     from . import events
@@ -291,10 +291,11 @@ def run_replay(cfg: dict, path: str) -> None:
     cfg["debug"]["log_text"] = True
     cfg["debug"]["keep_triggers"] = 0
     brain = Brain(cfg, None, Whisper(cfg["stt"]), None, DeviceSettings())
-    brain.phonetic = Phonetic()
-    brain.phonetic.start()
-    while not brain.phonetic.available:
-        time.sleep(0.5)
+    if gigaam:
+        brain.phonetic = Phonetic()
+        brain.phonetic.start()
+        while not brain.phonetic.available:
+            time.sleep(0.5)
     device = ReplayDevice(load_wav(Path(path)))
     listener = Listener(device, brain, observe=True)
     listener.record = False
@@ -359,6 +360,7 @@ def main() -> None:
     bench.add_argument("--minutes", type=float, help="взять только первые N минут")
     replay = sub.add_parser("replay", help="прогнать запись через детектор и проверки без ответов, посчитать глухое время")
     replay.add_argument("wav")
+    replay.add_argument("--no-gigaam", action="store_true", help="без проверки GigaAM")
     sub.add_parser("monitor", help="живая статистика из журнала событий")
     sub.add_parser("yandex-login", help="войти в Яндекс Музыку по коду и сохранить токен")
     sub.add_parser("levels", help="уровень звука с подключённых устройств, 10 секунд")
@@ -390,7 +392,7 @@ def main() -> None:
         from .bench import run_bench
         run_bench(args.wav, args.models.split(","), args.minutes)
     elif args.command == "replay":
-        run_replay(cfg, args.wav)
+        run_replay(cfg, args.wav, not args.no_gigaam)
     elif args.command == "monitor":
         from .monitor import run_monitor
         try:

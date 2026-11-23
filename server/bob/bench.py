@@ -53,9 +53,9 @@ def whisper_runner(repo: str):
     return run
 
 
-def helper_runner(kind):
-    from .phonetic import GigaChatAudio, Phonetic
-    phonetic = (GigaChatAudio if kind == "gigachat" else Phonetic)()
+def gigaam_runner():
+    from .phonetic import Phonetic
+    phonetic = Phonetic()
     phonetic.start()
     while not phonetic.available:
         time.sleep(0.5)
@@ -63,7 +63,7 @@ def helper_runner(kind):
 
 
 def runners(names: list[str]) -> dict:
-    return {name: (helper_runner(name) if name in ("gigaam", "gigachat") else whisper_runner(WHISPER_MODELS[name])) for name in names}
+    return {name: (gigaam_runner() if name == "gigaam" else whisper_runner(WHISPER_MODELS[name])) for name in names}
 
 
 def run_bench(path: str, names: list[str], limit_minutes: float | None) -> None:
