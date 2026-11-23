@@ -33,7 +33,7 @@ def run_ask(cfg: dict, text: str, speak: bool, voice_name: str | None = None) ->
     watch = Stopwatch()
     answer = assistant.handle(text)
     watch.lap("модель")
-    print(f"Боб: {answer}")
+    print(f"Джарвис: {answer}")
     if speak and answer:
         from .audio import Speaker
         tts = load_voice(cfg)
@@ -85,7 +85,7 @@ def run_eval(cfg: dict, path: str, out: str | None) -> None:
         answer = assistant.handle(raw.strip(), "mac")
         watch.lap("модель")
         spoken, _, extra = answer.partition("|||")
-        print(f"Вы: {raw.strip()}\nБоб: {spoken}" + (f" ‖ {extra}" if extra else "") + f"\n⏱ {watch.line()}\n")
+        print(f"Вы: {raw.strip()}\nДжарвис: {spoken}" + (f" ‖ {extra}" if extra else "") + f"\n⏱ {watch.line()}\n")
         lines += [f"**{raw.strip()}**", f"- голосом: {spoken}", *([f"- на плашке: {extra}"] if extra else []), f"- время: {watch.marks[0][1]:.1f} с", ""]
     if out:
         Path(out).write_text("\n".join(lines), encoding="utf-8")

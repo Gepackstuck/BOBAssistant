@@ -65,7 +65,7 @@ music:
   volume: 0.8
 
 persona:
-  name: Боб
+  name: Джарвис
 
 debug:
   log_text: false

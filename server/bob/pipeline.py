@@ -17,7 +17,7 @@ from .music import phonetic_hint
 from .wake import GIGA_WAKE_RE, make_wake, remove_wake, sounds_like_wake, strip_wake
 
 PLATE_INTERVAL = 0.12
-PLAY_RE = re.compile(r"^\s*(?:боб[\s,.!]+)?(?:включи|поставь|сыграй|запусти|найди|давай)\b", re.IGNORECASE)
+PLAY_RE = re.compile(r"^\s*(?:(?:боб|джарвис)[\s,.!]+)?(?:включи|поставь|сыграй|запусти|найди|давай)\b", re.IGNORECASE)
 UTTERANCES = ROOT / "data" / "utterances"
 TRIGGERS = ROOT / "data" / "triggers"
 RECORDINGS = ROOT / "data" / "recordings"
@@ -352,7 +352,7 @@ class Listener(threading.Thread):
             spoken, _, extra = answer.partition(DETAIL_MARK)
             spoken = spoken.strip()
             shown = f"{spoken} {extra.strip()}".strip()
-            self.log(f"Боб: {spoken or '(молча)'}" + (f" ‖ на плашке: {extra.strip()}" if extra.strip() else ""))
+            self.log(f"Джарвис: {spoken or '(молча)'}" + (f" ‖ на плашке: {extra.strip()}" if extra.strip() else ""))
             emit("turn", device=device.name, command=command, answer=spoken, model_secs=round(watch.marks[-1][1], 2) if watch.marks else None)
             if not answer:
                 break
