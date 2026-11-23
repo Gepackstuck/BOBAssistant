@@ -24,3 +24,6 @@ wakewords/data/clips/
 wakewords/data/features/
 wakewords/data/*.log
 server/data/
+
+server/helpers/gigachat-audio/model/
+server/helpers/gigachat-audio/download.log

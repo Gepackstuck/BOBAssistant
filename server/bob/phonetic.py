@@ -15,6 +15,9 @@ TIMEOUT = 20
 
 
 class Phonetic:
+    helper = HELPER
+    ready_timeout = 0
+
     def __init__(self):
         self.process: subprocess.Popen | None = None
         self.lines: queue.Queue[str] = queue.Queue()
@@ -27,14 +30,14 @@ class Phonetic:
 
     @property
     def installed(self) -> bool:
-        return (HELPER / ".venv" / "bin" / "python").exists()
+        return (self.helper / ".venv" / "bin" / "python").exists()
 
     def start(self) -> None:
         if not self.installed or self.process is not None:
             return
         self.process = subprocess.Popen(
-            [str(HELPER / ".venv" / "bin" / "python"), str(HELPER / "worker.py")],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, cwd=str(HELPER),
+            [str(self.helper / ".venv" / "bin" / "python"), str(self.helper / "worker.py")],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, cwd=str(self.helper),
         )
         threading.Thread(target=self.read, daemon=True, name="gigaam-reader").start()
 
@@ -69,3 +72,7 @@ class Phonetic:
     def stop(self) -> None:
         if self.process is not None:
             self.process.terminate()
+
+
+class GigaChatAudio(Phonetic):
+    helper = ROOT / "helpers" / "gigachat-audio"
