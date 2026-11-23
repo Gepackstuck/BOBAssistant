@@ -1,13 +1,17 @@
 import json
 import os
 import secrets
+import socketserver
 import threading
 import time
+
+import numpy as np
 
 from websockets.sync.server import serve
 
 from .config import ROOT
 from .devices import Device, Displays, RemoteDevice, plate_payload
+from .events import emit
 from .pipeline import Brain, Listener, scaled
 
 TOKEN_FILE = ROOT / "secrets" / "token"
@@ -185,7 +189,8 @@ class DeviceServer(threading.Thread):
             return
         device = RemoteDevice(name, connection, self.cfg["audio"]["preroll_seconds"], int(hello.get("rate", 16000)))
         self.devices[name] = device
-        device.echo_gain = float(self.cfg["audio"].get("ref_gain", 1.0))
+        device.echo_settings = self.cfg.get("echo", {})
+        device.mic_gain = float(self.cfg["audio"].get("tv_mic_gain", 60))
         device.style_provider = lambda: self.brain.settings.style(name)
         device.music_listener = (lambda message: self.music.on_event(name, message)) if self.music else None
         print(f"[{name}] подключено", flush=True)
@@ -205,4 +210,49 @@ class DeviceServer(threading.Thread):
         network = self.cfg["network"]
         with serve(self.handle, network["host"], network["port"], max_size=2**20) as server:
             print(f"Жду устройства на порту {network['port']}", flush=True)
+            server.serve_forever()
+
+
+class HelperListener(threading.Thread):
+    def __init__(self, cfg: dict, server: DeviceServer):
+        super().__init__(daemon=True, name="helper-listener")
+        self.cfg = cfg
+        self.server = server
+
+    def run(self) -> None:
+        listener = self
+
+        class Handler(socketserver.StreamRequestHandler):
+            def handle(self) -> None:
+                try:
+                    hello = json.loads(self.rfile.readline(4096))
+                except Exception:
+                    return
+                if not secrets.compare_digest(str(hello.get("token", "")), listener.server.token):
+                    return
+                name = str(hello.get("device") or "tv")[:32]
+                emit("helper", device=name, state="подключён")
+                print(f"[{name}] помощник звука подключён", flush=True)
+                try:
+                    while True:
+                        header = self.rfile.read(4)
+                        if len(header) < 4:
+                            break
+                        length = int.from_bytes(header, "little")
+                        payload = self.rfile.read(length)
+                        if len(payload) < length or length % 8:
+                            break
+                        count = length // 8
+                        device = listener.server.devices.get(name)
+                        if device is not None and hasattr(device, "feed_helper"):
+                            device.feed_helper(np.frombuffer(payload[: count * 4], dtype="<f4"), np.frombuffer(payload[count * 4:], dtype="<f4"))
+                except OSError:
+                    pass
+                finally:
+                    emit("helper", device=name, state="отключён")
+                    print(f"[{name}] помощник звука отключён", flush=True)
+
+        socketserver.ThreadingTCPServer.allow_reuse_address = True
+        socketserver.ThreadingTCPServer.daemon_threads = True
+        with socketserver.ThreadingTCPServer((self.cfg["network"]["host"], self.cfg["network"]["helper_port"]), Handler) as server:
             server.serve_forever()

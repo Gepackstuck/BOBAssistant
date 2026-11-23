@@ -14,7 +14,7 @@ from .devices import Device
 from .events import emit
 from .listen import Vad, capture, looks_unfinished
 from .music import phonetic_hint
-from .wake import make_wake, remove_wake, sounds_like_wake, strip_wake
+from .wake import GIGA_WAKE_RE, make_wake, remove_wake, sounds_like_wake, strip_wake
 
 PLATE_INTERVAL = 0.12
 PLAY_RE = re.compile(r"^\s*(?:боб[\s,.!]+)?(?:включи|поставь|сыграй|запусти|найди|давай)\b", re.IGNORECASE)
@@ -182,7 +182,7 @@ class Listener(threading.Thread):
                 now = time.monotonic()
                 if now - level["at"] >= 2.0:
                     level["at"] = now
-                    emit("level", device=self.device.name, rms=round(float(getattr(self.device, "rms", 0.0)), 1), peak=int(getattr(self.device, "peak", 0)))
+                    emit("level", device=self.device.name, rms=round(float(getattr(self.device, "rms", 0.0)), 1), peak=int(getattr(self.device, "peak", 0)), clean=round(float(np.sqrt(np.mean(block.astype(np.float32) ** 2))), 1), helper=bool(getattr(self.device, "helper_active", False)))
             return block
 
         self.device.read = tapped
@@ -278,7 +278,7 @@ class Listener(threading.Thread):
                 self.log(f"ложное срабатывание (быстрая проверка, GigaAM: «{giga_text}»)" if self.log_text else "ложное срабатывание (быстрая проверка)")
                 emit("rejected", device=self.device.name, key=key, stage="gigaam-fast", giga=giga_text, secs=round(sum(len(block) for block in preroll) / self.device.sample_rate, 1))
                 return None
-            quick_ok = bool(verdict)
+            quick_ok = bool(GIGA_WAKE_RE.search(giga_text))
         self.wake.reset()
         audio, voiced, confirmed, live_text = self.listen_live(preroll, require_wake=True, rewake=True)
         if self.rewoken:
@@ -294,7 +294,7 @@ class Listener(threading.Thread):
                 emit("rejected", device=self.device.name, key=key, stage="gigaam", giga=giga_text, secs=round(len(audio) / self.device.sample_rate, 1))
                 self.save_trigger(audio, key, strong, confirmed, giga_text, "", False)
                 return None
-            confirmed = bool(verdict)
+            confirmed = bool(GIGA_WAKE_RE.search(giga_text))
         watch = Stopwatch()
         heard = self.transcribe(audio) if voiced else ""
         watch.lap("речь→текст")

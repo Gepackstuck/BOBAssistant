@@ -161,7 +161,7 @@ def run_voice(cfg: dict, use_mic: bool) -> None:
     from .assistant import Assistant
     from .audio import Mic, Speaker
     from .devices import Displays, LocalDevice
-    from .net import DeviceServer
+    from .net import DeviceServer, HelperListener
     from .pipeline import Brain, Listener
     from .settings import DeviceSettings
     from .stt import Whisper
@@ -185,6 +185,7 @@ def run_voice(cfg: dict, use_mic: bool) -> None:
     displays = Displays()
     server = DeviceServer(cfg, brain, displays)
     server.start()
+    HelperListener(cfg, server).start()
     assistant.planner.on_fire = server.fire
     assistant.home.notify = lambda device, payload: server.devices[device].card(payload) if device in server.devices else None
     assistant.planner.start()
@@ -204,7 +205,7 @@ def run_observe(cfg: dict, source: str) -> None:
     from .audio import Mic, Speaker
     from .devices import Displays, LocalDevice
     from .events import emit
-    from .net import DeviceServer
+    from .net import DeviceServer, HelperListener
     from .pipeline import Brain, Listener
     from .settings import DeviceSettings
     from .stt import Whisper
@@ -223,6 +224,7 @@ def run_observe(cfg: dict, source: str) -> None:
     if source == "tv":
         server = DeviceServer(cfg, brain, Displays(), observe=True)
         server.start()
+        HelperListener(cfg, server).start()
         threading.Event().wait()
     with Mic(audio_cfg["sample_rate"], audio_cfg["input_device"], audio_cfg["preroll_seconds"]) as mic:
         local = LocalDevice("mac", mic, Speaker(audio_cfg["output_device"], mic), Displays())

@@ -33,6 +33,8 @@ def describe(event: dict) -> str:
         return f"{GREEN}ответ{RESET} «{event['command']}» → «{event['answer']}»"
     if kind == "session":
         return f"{BOLD}старт{RESET} {event.get('mode', '')}"
+    if kind == "helper":
+        return f"помощник звука {event['state']}"
     return kind
 
 
@@ -43,7 +45,8 @@ def render(state: dict) -> str:
         f"{BOLD}Боб · монитор{RESET}   {DIM}{EVENTS}{RESET}",
         f"сессия {int(now - state['start']) // 60} мин {int(now - state['start']) % 60:02d} с    режим: {state['mode']}",
         "",
-        f"микрофон  {bar(level['rms'], 600)}  rms {level['rms']:.0f}  пик {level['peak']}" + (f"  {RED}нет сигнала{RESET}" if now - level["at"] > 10 else ""),
+        f"микрофон  {bar(level['rms'], 1600)}  rms {level['rms']:.0f}  пик {level['peak']}" + (f"  {RED}нет сигнала{RESET}" if now - level["at"] > 10 else ""),
+        f"без звука ТВ {bar(level['clean'], 1600)}  rms {level['clean']:.0f}  помощник звука: " + (f"{GREEN}работает{RESET}" if level["helper"] else f"{RED}нет (эхо не вычитается){RESET}"),
         "",
         f"{YELLOW}глухое время{RESET} {state['deaf']:.0f} с из {max(now - state['start'], 1):.0f} с ({100 * state['deaf'] / max(now - state['start'], 1):.0f}%): пока Боб разбирает срабатывание, он не слышит новое слово",
         "",
@@ -59,7 +62,7 @@ def render(state: dict) -> str:
 def apply(state: dict, event: dict) -> None:
     kind = event["kind"]
     if kind == "level":
-        state["level"] = {"rms": event["rms"], "peak": event["peak"], "at": event["ts"]}
+        state["level"] = {"rms": event["rms"], "peak": event["peak"], "at": event["ts"], "clean": event.get("clean", 0.0), "helper": event.get("helper", False)}
         return
     if kind == "busy":
         state["deaf"] += event["secs"]
@@ -77,7 +80,7 @@ def apply(state: dict, event: dict) -> None:
 
 
 def run_monitor() -> None:
-    state = {"start": time.time(), "mode": "—", "wake": 0, "strong": 0, "rejected": 0, "by_giga": 0, "by_whisper": 0, "accepted": 0, "turns": 0, "deaf": 0.0, "recent": [], "level": {"rms": 0.0, "peak": 0, "at": 0.0}}
+    state = {"start": time.time(), "mode": "—", "wake": 0, "strong": 0, "rejected": 0, "by_giga": 0, "by_whisper": 0, "accepted": 0, "turns": 0, "deaf": 0.0, "recent": [], "level": {"rms": 0.0, "peak": 0, "at": 0.0, "clean": 0.0, "helper": False}}
     while not EVENTS.exists():
         sys.stdout.write(CLEAR + "Жду журнал событий…\n")
         sys.stdout.flush()

@@ -17,7 +17,6 @@ dependencies = [
     "num2words>=0.5.13",
     "ddgs>=9.0",
     "yandex-music>=3.2.2",
-    "aec-audio-processing>=1.0.1",
 ]
 
 [project.scripts]

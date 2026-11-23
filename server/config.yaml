@@ -3,6 +3,14 @@ audio:
   input_device: builtin
   output_device: null
   preroll_seconds: 3.0
+  tv_mic_gain: 60
+
+echo:
+  partitions: 16
+  mu: 0.2
+  ref_gain: 8.0
+  delay: 1600
+  guard: 10.0
 
 wake:
   engine: vosk
@@ -67,6 +75,7 @@ debug:
 network:
   host: 0.0.0.0
   port: 8765
+  helper_port: 8766
   token_env: BOB_TOKEN
 
 place:

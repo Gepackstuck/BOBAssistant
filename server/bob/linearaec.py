@@ -5,8 +5,12 @@ FFT = 2 * HOP
 
 
 class LinearEchoCanceller:
-    def __init__(self, partitions: int = 16, mu: float = 0.25, ref_gain: float = 1.0, delay: int = 1600):
+    def __init__(self, partitions: int = 16, mu: float = 0.25, ref_gain: float = 1.0, delay: int = 1600, floor: float = 0.0, peak_track: bool = False, smooth: float = 0.9, guard: float = 0.0):
         self.partitions = partitions
+        self.floor = floor
+        self.guard = guard
+        self.peak_track = peak_track
+        self.smooth = smooth
         self.mu = mu
         self.ref_gain = ref_gain
         self.weights = np.zeros((partitions, HOP + 1), dtype=np.complex128)
@@ -24,9 +28,14 @@ class LinearEchoCanceller:
         self.history[0] = spectrum
         estimate = np.fft.irfft((self.weights * self.history).sum(axis=0))[HOP:]
         error = mic - estimate
+        if self.guard and float(np.dot(error, error)) > self.guard * float(np.dot(mic, mic)) + 1e4:
+            self.weights *= 0.5
+            return mic
         error_spectrum = np.fft.rfft(np.concatenate([np.zeros(HOP), error]))
-        self.power = 0.9 * self.power + 0.1 * (np.abs(self.history) ** 2).sum(axis=0)
-        gradient = np.conj(self.history) * error_spectrum / (self.power + 1e-3)
+        instant = (np.abs(self.history) ** 2).sum(axis=0)
+        smoothed = self.smooth * self.power + (1 - self.smooth) * instant
+        self.power = np.maximum(instant, smoothed) if self.peak_track else smoothed
+        gradient = np.conj(self.history) * error_spectrum / (self.power + self.floor * float(self.power.mean()) + 1e-3)
         constrained = np.fft.irfft(gradient, axis=1)
         constrained[:, HOP:] = 0
         self.weights += self.mu * np.fft.rfft(constrained, axis=1)

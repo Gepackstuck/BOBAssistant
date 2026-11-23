@@ -1,14 +1,14 @@
 import json
 import queue
 import threading
+import time
 from collections import deque
 from typing import Iterable
 
 import numpy as np
 
 from .audio import BLOCK, Mic, Speaker
-from .echo import EchoCanceller
-from .events import emit
+from .linearaec import LinearEchoCanceller
 from .macplayer import MacPlayer
 
 
@@ -137,28 +137,41 @@ class RemoteDevice(Device):
         self.tv_event = threading.Event()
         self.peak = 0
         self.rms = 0.0
-        self.echo: EchoCanceller | None = None
-        self.echo_gain = 1.0
-        self.reference = False
+        self.echo: LinearEchoCanceller | None = None
+        self.echo_settings: dict = {}
+        self.mic_gain = 60.0
+        self.helper_at = 0.0
         self.raw_sink = None
 
-    def split(self, payload: bytes) -> np.ndarray:
-        count = len(payload) // 6
-        mic = np.frombuffer(payload[: count * 2], dtype="<i2")
-        ref = np.frombuffer(payload[count * 2: count * 6], dtype="<f4")
-        if self.raw_sink:
-            self.raw_sink(mic, ref)
-        if self.echo is None:
-            self.echo = EchoCanceller(self.sample_rate, self.echo_gain)
-        return self.echo.process(mic, ref)
+    @property
+    def helper_active(self) -> bool:
+        return time.monotonic() - self.helper_at < 3.0
 
-    def feed(self, payload: bytes) -> None:
-        if self.muted.is_set():
-            return
-        samples = self.split(payload) if self.reference else np.frombuffer(payload, dtype="<i2")
+    def feed_helper(self, mic: np.ndarray, ref: np.ndarray) -> None:
+        self.helper_at = time.monotonic()
+        if self.echo is None:
+            self.echo = LinearEchoCanceller(**self.echo_settings)
+        mic16 = np.clip(mic * self.mic_gain * 32768.0, -32768, 32767).astype(np.int16)
+        if self.raw_sink:
+            self.raw_sink(mic16, ref)
+        self.measure(mic16)
+        cleaned = self.echo.process(mic16, ref)
+        if not self.muted.is_set():
+            self.enqueue(cleaned)
+
+    def measure(self, samples: np.ndarray) -> None:
         if samples.size:
             self.peak = max(int(np.abs(samples).max()), int(self.peak * 0.97))
             self.rms = 0.95 * self.rms + 0.05 * float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
+
+    def feed(self, payload: bytes) -> None:
+        if self.muted.is_set() or self.helper_active:
+            return
+        samples = np.frombuffer(payload, dtype="<i2")
+        self.measure(samples)
+        self.enqueue(samples)
+
+    def enqueue(self, samples: np.ndarray) -> None:
         self.pending = np.concatenate([self.pending, samples])
         while len(self.pending) >= BLOCK:
             block, self.pending = self.pending[:BLOCK].copy(), self.pending[BLOCK:]
@@ -227,11 +240,6 @@ class RemoteDevice(Device):
             self.played.set()
         elif message.get("type") == "music_event" and self.music_listener:
             self.music_listener(message)
-        elif message.get("type") == "audio_format":
-            self.reference = bool(message.get("reference"))
-            emit("audio_format", device=self.name, reference=self.reference)
-            self.echo = None
-            self.pending = np.zeros(0, dtype=np.int16)
         elif message.get("type") == "apps":
             self.apps = message.get("apps", [])
         elif message.get("type") == "tv_state":
