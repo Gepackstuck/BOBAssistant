@@ -1,5 +1,6 @@
 import json
 import re
+from difflib import SequenceMatcher
 
 import numpy as np
 from vosk import KaldiRecognizer, Model, SetLogLevel
@@ -15,6 +16,14 @@ WAKE_RE = re.compile(
 
 STRONG_WAIT_BLOCKS = 6
 GIGA_WAKE_RE = re.compile(r"ж[аеэи]р[вб]?[иеэы]с|ярвис", re.IGNORECASE)
+
+
+FUZZY_WORD = "джарвис"
+FUZZY_LIMIT = 0.5
+
+
+def sounds_like_wake(text: str) -> bool:
+    return bool(GIGA_WAKE_RE.search(text)) or any(SequenceMatcher(None, word, FUZZY_WORD).ratio() >= FUZZY_LIMIT for word in text.lower().split())
 
 
 def normalize(text: str) -> str:

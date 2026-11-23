@@ -14,7 +14,7 @@ from .devices import Device
 from .events import emit
 from .listen import Vad, capture, looks_unfinished
 from .music import phonetic_hint
-from .wake import GIGA_WAKE_RE, make_wake, remove_wake, strip_wake
+from .wake import make_wake, remove_wake, sounds_like_wake, strip_wake
 
 PLATE_INTERVAL = 0.12
 PLAY_RE = re.compile(r"^\s*(?:боб[\s,.!]+)?(?:включи|поставь|сыграй|запусти|найди|давай)\b", re.IGNORECASE)
@@ -108,7 +108,7 @@ class Listener(threading.Thread):
         if phonetic is None or not phonetic.available:
             return None, ""
         text = phonetic.transcribe(audio)
-        return bool(GIGA_WAKE_RE.search(text)), text
+        return sounds_like_wake(text), text
 
     def barge_monitor(self, block):
         key = self.wake.feed(block)
