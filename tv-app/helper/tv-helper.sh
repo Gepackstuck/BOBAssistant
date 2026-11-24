@@ -16,12 +16,13 @@ case "$1" in
     TOKEN=$(cat "$ROOT/server/secrets/token")
     "$DIR/build.sh" >/dev/null
     adb push "$DIR/build/helper.jar" /data/local/tmp/bobhelper.jar >/dev/null
-    adb shell "pkill -f com.bobassistant.helper.Stream" < /dev/null 2>/dev/null || true
+    adb shell "pkill -f bobassistant.watchdog; pkill -f com.bobassistant.helper.Stream" < /dev/null 2>/dev/null || true
+    adb shell "nohup setsid sh -c 'while true; do settings put global low_power_standby_enabled 0; sleep 30; done # bobassistant.watchdog' >/dev/null 2>&1 &" < /dev/null
     adb shell "cd /data/local/tmp && nohup setsid sh -c 'while true; do CLASSPATH=/data/local/tmp/bobhelper.jar app_process /system/bin com.bobassistant.helper.Stream $HOST $PORT $TOKEN; sleep 5; done' >/dev/null 2>&1 &" < /dev/null
     echo "помощник запущен"
     ;;
   stop)
-    adb shell "pkill -f com.bobassistant.helper.Stream" || true
+    adb shell "pkill -f bobassistant.watchdog; pkill -f com.bobassistant.helper.Stream" < /dev/null || true
     echo "помощник остановлен"
     ;;
   status)
